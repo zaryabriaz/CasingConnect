@@ -449,6 +449,75 @@
   gap: 0.7rem;
 }
 
+.admin-campaign {
+  margin-bottom: 1.15rem;
+  grid-template-columns: 1fr;
+}
+
+.admin-campaign-controls {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.admin-campaign-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.admin-check {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.84rem;
+  color: var(--admin-muted);
+}
+
+.admin-check-col {
+  width: 2.2rem;
+  vertical-align: middle;
+}
+
+.admin-campaign-preview {
+  margin-top: 0.25rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 12px;
+  background: rgba(20, 85, 68, 0.04);
+  border: 1px solid rgba(20, 85, 68, 0.12);
+}
+
+.admin-campaign-preview summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--admin-green-deep);
+}
+
+.admin-campaign-subject {
+  margin: 0.7rem 0 0.4rem;
+  font-size: 0.86rem;
+}
+
+.admin-campaign-preview pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--admin-ink);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .admin-field {
   display: grid;
   gap: 0.3rem;

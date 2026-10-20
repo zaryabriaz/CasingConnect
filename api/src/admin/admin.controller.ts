@@ -19,9 +19,11 @@ import {
   ImpersonateDto,
   MarketplaceProspectDto,
   ScrapeProspectsDto,
+  SendCampaignDto,
   UpdateAdminBusinessDto,
   UpdateProspectDto,
 } from './dto';
+import { CampaignsService, type CampaignTemplateId } from './campaigns.service';
 import { ProspectsService } from './prospects.service';
 
 @ApiTags('admin')
@@ -32,6 +34,7 @@ export class AdminController {
   constructor(
     private readonly admin: AdminService,
     private readonly prospects: ProspectsService,
+    private readonly campaigns: CampaignsService,
     private readonly setupRequests: SetupRequestsService,
   ) {}
 
@@ -122,6 +125,31 @@ export class AdminController {
   @ApiOperation({ summary: 'Delete a prospect.' })
   removeProspect(@Param('id', ParseUUIDPipe) id: string) {
     return this.prospects.remove(id);
+  }
+
+  @Get('campaigns/templates')
+  @ApiOperation({ summary: 'List outreach email templates for marketplace campaigns.' })
+  campaignTemplates() {
+    return this.campaigns.templates();
+  }
+
+  @Get('campaigns/preview')
+  @ApiOperation({ summary: 'Preview an outreach email template.' })
+  campaignPreview(
+    @Query('template') template: CampaignTemplateId,
+    @Query('companyName') companyName?: string,
+  ) {
+    return this.campaigns.preview(template, companyName);
+  }
+
+  @Post('campaigns/send')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Send a campaign email to selected prospects (max 25).' })
+  sendCampaign(@Body() dto: SendCampaignDto) {
+    return this.campaigns.send({
+      ...dto,
+      skipAlreadySent: dto.skipAlreadySent !== false,
+    });
   }
 
   @Get('setup-requests')

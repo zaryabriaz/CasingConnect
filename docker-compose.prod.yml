@@ -33,6 +33,7 @@ services:
       SMTP_SECURE: ${SMTP_SECURE:-false}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
+      PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-https://casingconnect.com}
     volumes:
       - uploads:/app/api/uploads
     depends_on:

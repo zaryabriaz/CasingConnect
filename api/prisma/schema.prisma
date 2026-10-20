@@ -659,20 +659,23 @@ model MarketplaceInquiry {
 
 /// Admin-discovered company lead for Marketplace outreach (not a live Business yet).
 model MarketplaceProspect {
-  id          String                     @id @default(uuid()) @db.Uuid
-  name        String
-  country     String?
-  city        String?
-  website     String?
-  email       String?
-  phone       String?
-  sourceUrl   String
-  sourceLabel String?
-  snippet     String?
-  status      MarketplaceProspectStatus  @default(NEW)
-  notes       String?
-  createdAt   DateTime                   @default(now())
-  updatedAt   DateTime                   @updatedAt
+  id                   String                     @id @default(uuid()) @db.Uuid
+  name                 String
+  country              String?
+  city                 String?
+  website              String?
+  email                String?
+  phone                String?
+  sourceUrl            String
+  sourceLabel          String?
+  snippet              String?
+  status               MarketplaceProspectStatus  @default(NEW)
+  notes                String?
+  lastCampaignAt       DateTime?
+  lastCampaignTemplate String?
+  campaignSendCount    Int                        @default(0)
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
 
   @@unique([name, sourceUrl])
   @@index([status])

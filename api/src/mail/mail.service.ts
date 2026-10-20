@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import nodemailer from 'nodemailer';
+import nodemailer, { type Transporter } from 'nodemailer';
 
 export type SetupRequestMailInput = {
   id: string;
@@ -11,6 +11,14 @@ export type SetupRequestMailInput = {
   country: string;
   message: string;
   createdAt: string;
+};
+
+export type OutreachMailInput = {
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+  replyTo?: string;
 };
 
 @Injectable()
@@ -27,6 +35,25 @@ export class MailService {
     );
   }
 
+  private transporter(): Transporter {
+    return nodemailer.createTransport({
+      host: this.config.get<string>('SMTP_HOST')!.trim(),
+      port: Number(this.config.get('SMTP_PORT') ?? 587),
+      secure: String(this.config.get('SMTP_SECURE') ?? '').toLowerCase() === 'true',
+      auth: {
+        user: this.config.get<string>('SMTP_USER')!.trim(),
+        pass: this.config.get<string>('SMTP_PASS')!.trim(),
+      },
+    });
+  }
+
+  private fromAddress() {
+    return (
+      this.config.get<string>('MAIL_FROM')?.trim() ||
+      this.config.get<string>('SMTP_USER')!.trim()
+    );
+  }
+
   async notifySetupRequest(input: SetupRequestMailInput) {
     if (!this.isConfigured()) {
       this.logger.warn(
@@ -37,19 +64,7 @@ export class MailService {
 
     const to =
       this.config.get<string>('MAIL_TO')?.trim() || 'info@casingconnect.com';
-    const from =
-      this.config.get<string>('MAIL_FROM')?.trim() ||
-      this.config.get<string>('SMTP_USER')!.trim();
-
-    const transporter = nodemailer.createTransport({
-      host: this.config.get<string>('SMTP_HOST')!.trim(),
-      port: Number(this.config.get('SMTP_PORT') ?? 587),
-      secure: String(this.config.get('SMTP_SECURE') ?? '').toLowerCase() === 'true',
-      auth: {
-        user: this.config.get<string>('SMTP_USER')!.trim(),
-        pass: this.config.get<string>('SMTP_PASS')!.trim(),
-      },
-    });
+    const from = this.fromAddress();
 
     const subject = `New tailored setup request — ${input.name}${
       input.companyName ? ` (${input.companyName})` : ''
@@ -91,7 +106,7 @@ export class MailService {
     `;
 
     try {
-      await transporter.sendMail({
+      await this.transporter().sendMail({
         from: `CasingConnect <${from}>`,
         to,
         replyTo: input.email,
@@ -109,9 +124,40 @@ export class MailService {
       return { sent: false as const, reason: 'send_failed' };
     }
   }
+
+  async sendOutreach(input: OutreachMailInput) {
+    if (!this.isConfigured()) {
+      return { sent: false as const, reason: 'smtp_not_configured' as const };
+    }
+
+    const from = this.fromAddress();
+    const replyTo =
+      input.replyTo?.trim() ||
+      this.config.get<string>('MAIL_TO')?.trim() ||
+      from;
+
+    try {
+      await this.transporter().sendMail({
+        from: `CasingConnect <${from}>`,
+        to: input.to,
+        replyTo,
+        subject: input.subject,
+        text: input.text,
+        html: input.html,
+      });
+      this.logger.log(`Outreach email sent to ${input.to}`);
+      return { sent: true as const };
+    } catch (error) {
+      this.logger.error(
+        `Failed to send outreach to ${input.to}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      return { sent: false as const, reason: 'send_failed' as const };
+    }
+  }
 }
 
-function escapeHtml(value: string) {
+export function escapeHtml(value: string) {
   return value
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')

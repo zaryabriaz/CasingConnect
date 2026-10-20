@@ -1,7 +1,24 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { BusinessActivity, MarketplaceProspectStatus, MemberRole } from '@prisma/client';
-import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, IsUrl, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsBoolean,
+  IsEnum,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUrl,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 import { Type } from 'class-transformer';
+import { CAMPAIGN_TEMPLATES, type CampaignTemplateId } from './campaign-templates';
 
 export class AdminBusinessListItemDto {
   @ApiProperty({ format: 'uuid' }) id!: string;
@@ -150,5 +167,29 @@ export class MarketplaceProspectDto {
   @ApiPropertyOptional({ nullable: true }) snippet!: string | null;
   @ApiProperty({ enum: MarketplaceProspectStatus }) status!: MarketplaceProspectStatus;
   @ApiPropertyOptional({ nullable: true }) notes!: string | null;
+  @ApiPropertyOptional({ nullable: true }) lastCampaignAt!: string | null;
+  @ApiPropertyOptional({ nullable: true }) lastCampaignTemplate!: string | null;
+  @ApiProperty() campaignSendCount!: number;
   @ApiProperty() createdAt!: string;
+}
+
+export class SendCampaignDto {
+  @ApiProperty({ type: [String], format: 'uuid' })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(25)
+  @IsUUID('4', { each: true })
+  prospectIds!: string[];
+
+  @ApiProperty({ enum: CAMPAIGN_TEMPLATES })
+  @IsIn([...CAMPAIGN_TEMPLATES])
+  template!: CampaignTemplateId;
+
+  @ApiPropertyOptional({
+    description: 'Skip prospects that already received this same template.',
+    default: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  skipAlreadySent?: boolean;
 }

@@ -17,7 +17,18 @@ type Prospect = {
   snippet: string | null;
   status: 'NEW' | 'REVIEWED' | 'DISMISSED' | 'IMPORTED';
   notes: string | null;
+  lastCampaignAt: string | null;
+  lastCampaignTemplate: string | null;
+  campaignSendCount: number;
   createdAt: string;
+};
+
+type CampaignTemplate = {
+  id: 'MARKETPLACE' | 'TAILORED' | 'COMBINED';
+  label: string;
+  description: string;
+  subject: string;
+  smtpConfigured: boolean;
 };
 
 type ScrapeResult = {
@@ -26,11 +37,29 @@ type ScrapeResult = {
   items: Prospect[];
 };
 
+type SendResult = {
+  template: string;
+  requested: number;
+  sent: number;
+  failed: number;
+  results: Array<{
+    prospectId: string;
+    name: string;
+    email: string | null;
+    ok: boolean;
+    reason?: string;
+  }>;
+};
+
 function statusClass(status: Prospect['status']) {
   if (status === 'REVIEWED') return 'reviewed';
   if (status === 'DISMISSED') return 'dismissed';
   if (status === 'IMPORTED') return 'imported';
   return '';
+}
+
+function hasEmail(row: Prospect) {
+  return Boolean(row.email?.includes('@'));
 }
 
 export default function AdminProspectsPage() {
@@ -42,6 +71,12 @@ export default function AdminProspectsPage() {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [templates, setTemplates] = useState<CampaignTemplate[]>([]);
+  const [template, setTemplate] = useState<CampaignTemplate['id']>('COMBINED');
+  const [skipAlreadySent, setSkipAlreadySent] = useState(true);
+  const [previewSubject, setPreviewSubject] = useState('');
+  const [previewText, setPreviewText] = useState('');
 
   async function load(nextStatus = status) {
     setError(null);
@@ -55,14 +90,68 @@ export default function AdminProspectsPage() {
     }
   }
 
+  async function loadTemplates() {
+    try {
+      const data = await api<CampaignTemplate[]>('/admin/campaigns/templates');
+      setTemplates(data);
+    } catch {
+      /* ignore — page still works without templates until API is up */
+    }
+  }
+
+  async function loadPreview(nextTemplate = template) {
+    try {
+      const data = await api<{ subject: string; text: string }>(
+        `/admin/campaigns/preview?template=${encodeURIComponent(nextTemplate)}&companyName=${encodeURIComponent('Sample Company')}`,
+      );
+      setPreviewSubject(data.subject);
+      setPreviewText(data.text);
+    } catch {
+      setPreviewSubject('');
+      setPreviewText('');
+    }
+  }
+
   useEffect(() => {
     void load();
+    void loadTemplates();
+    void loadPreview();
   }, []);
+
+  useEffect(() => {
+    void loadPreview(template);
+  }, [template]);
 
   const newCount = useMemo(
     () => items.filter((item) => item.status === 'NEW').length,
     [items],
   );
+
+  const withEmail = useMemo(() => items.filter(hasEmail), [items]);
+  const selectedIds = useMemo(
+    () => Object.entries(selected).filter(([, on]) => on).map(([id]) => id),
+    [selected],
+  );
+  const selectedWithEmail = useMemo(
+    () => selectedIds.filter((id) => items.some((row) => row.id === id && hasEmail(row))),
+    [selectedIds, items],
+  );
+
+  const smtpConfigured = templates[0]?.smtpConfigured ?? false;
+
+  function toggleOne(id: string, on: boolean) {
+    setSelected((prev) => ({ ...prev, [id]: on }));
+  }
+
+  function selectAllWithEmail() {
+    const next: Record<string, boolean> = {};
+    for (const row of withEmail.slice(0, 25)) next[row.id] = true;
+    setSelected(next);
+  }
+
+  function clearSelection() {
+    setSelected({});
+  }
 
   async function onScrape(event: FormEvent) {
     event.preventDefault();
@@ -148,14 +237,57 @@ export default function AdminProspectsPage() {
     }
   }
 
+  async function sendCampaign() {
+    if (selectedWithEmail.length === 0) {
+      setError('Select at least one prospect that has an email address.');
+      return;
+    }
+    if (
+      !confirm(
+        `Send “${template}” campaign to ${selectedWithEmail.length} company email(s)?`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setNote(null);
+    try {
+      const result = await api<SendResult>('/admin/campaigns/send', {
+        method: 'POST',
+        body: JSON.stringify({
+          prospectIds: selectedWithEmail,
+          template,
+          skipAlreadySent,
+        }),
+      });
+      const fails = result.results.filter((row) => !row.ok);
+      setNote(
+        `Campaign sent: ${result.sent} ok, ${result.failed} skipped/failed` +
+          (fails.length
+            ? ` (${fails
+                .slice(0, 5)
+                .map((row) => `${row.name}: ${row.reason ?? 'failed'}`)
+                .join('; ')})`
+            : ''),
+      );
+      clearSelection();
+      await load(status);
+    } catch (caught) {
+      setError(errorText(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <>
       <div className="admin-page-head">
         <div>
           <h1>Company finder</h1>
           <p className="admin-lead">
-            Load and review natural-casing companies from public sources. Invite or publish only after
-            you have a real contact.
+            Load natural-casing companies, then email marketplace or tailored-setup invitations from
+            here.
           </p>
         </div>
         <div className="admin-stat">
@@ -228,11 +360,106 @@ export default function AdminProspectsPage() {
         </section>
       </div>
 
+      <section className="admin-tool admin-campaign">
+        <div>
+          <h2>Email campaign</h2>
+          <p>
+            Select companies with email below, choose a template, then send. Max 25 per batch.
+            {!smtpConfigured ? (
+              <>
+                {' '}
+                <strong>SMTP is not configured</strong> — add SMTP_* to server `.env.production`
+                first.
+              </>
+            ) : null}
+          </p>
+        </div>
+        <div className="admin-campaign-controls">
+          <label className="admin-field">
+            <span>Template</span>
+            <select
+              value={template}
+              onChange={(event) => setTemplate(event.target.value as CampaignTemplate['id'])}
+            >
+              {(templates.length
+                ? templates
+                : [
+                    {
+                      id: 'COMBINED' as const,
+                      label: 'Marketplace + system',
+                      description: '',
+                      subject: '',
+                      smtpConfigured: false,
+                    },
+                    {
+                      id: 'MARKETPLACE' as const,
+                      label: 'Marketplace invite',
+                      description: '',
+                      subject: '',
+                      smtpConfigured: false,
+                    },
+                    {
+                      id: 'TAILORED' as const,
+                      label: 'Tailored system setup',
+                      description: '',
+                      subject: '',
+                      smtpConfigured: false,
+                    },
+                  ]
+              ).map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="admin-check">
+            <input
+              type="checkbox"
+              checked={skipAlreadySent}
+              onChange={(event) => setSkipAlreadySent(event.target.checked)}
+            />
+            <span>Skip already sent this template</span>
+          </label>
+          <div className="admin-campaign-actions">
+            <button
+              type="button"
+              className="admin-btn"
+              disabled={busy || withEmail.length === 0}
+              onClick={selectAllWithEmail}
+            >
+              Select with email (max 25)
+            </button>
+            <button type="button" className="admin-btn ghost" disabled={busy} onClick={clearSelection}>
+              Clear
+            </button>
+            <button
+              type="button"
+              className="admin-btn primary"
+              disabled={busy || !smtpConfigured || selectedWithEmail.length === 0}
+              onClick={() => void sendCampaign()}
+            >
+              {busy ? 'Sending…' : `Send to ${selectedWithEmail.length}`}
+            </button>
+          </div>
+        </div>
+        {previewSubject ? (
+          <details className="admin-campaign-preview">
+            <summary>Preview email</summary>
+            <p className="admin-campaign-subject">
+              <strong>Subject:</strong> {previewSubject}
+            </p>
+            <pre>{previewText}</pre>
+          </details>
+        ) : null}
+      </section>
+
       <div className="admin-panel">
         <div className="admin-toolbar">
           <h2>
             Prospects
             {newCount > 0 && !status ? ` · ${newCount} new` : ''}
+            {withEmail.length ? ` · ${withEmail.length} with email` : ''}
           </h2>
           <div className="admin-toolbar-right">
             <label className="admin-field">
@@ -260,9 +487,12 @@ export default function AdminProspectsPage() {
           <table className="admin-table">
             <thead>
               <tr>
+                <th className="admin-check-col">
+                  <span className="sr-only">Select</span>
+                </th>
                 <th>Company</th>
                 <th>Contact</th>
-                <th>Source</th>
+                <th>Campaign</th>
                 <th>Status</th>
                 <th></th>
               </tr>
@@ -270,6 +500,15 @@ export default function AdminProspectsPage() {
             <tbody>
               {items.map((row) => (
                 <tr key={row.id}>
+                  <td data-label="Select" className="admin-check-col">
+                    <input
+                      type="checkbox"
+                      disabled={!hasEmail(row)}
+                      checked={Boolean(selected[row.id])}
+                      onChange={(event) => toggleOne(row.id, event.target.checked)}
+                      aria-label={`Select ${row.name}`}
+                    />
+                  </td>
                   <td data-label="Company">
                     <strong>{row.name}</strong>
                     <div className="muted">
@@ -293,11 +532,22 @@ export default function AdminProspectsPage() {
                       ) : null}
                     </div>
                   </td>
-                  <td data-label="Source">
-                    <div className="muted">{row.sourceLabel || '—'}</div>
-                    <a href={row.sourceUrl} target="_blank" rel="noreferrer">
-                      Open source
-                    </a>
+                  <td data-label="Campaign">
+                    {row.campaignSendCount > 0 ? (
+                      <div className="muted">
+                        <div>
+                          {row.campaignSendCount} send{row.campaignSendCount === 1 ? '' : 's'}
+                        </div>
+                        <div className="tiny">
+                          {row.lastCampaignTemplate || '—'}
+                          {row.lastCampaignAt
+                            ? ` · ${new Date(row.lastCampaignAt).toLocaleDateString()}`
+                            : ''}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="muted">Not sent</span>
+                    )}
                   </td>
                   <td data-label="Status">
                     <span className={`admin-badge ${statusClass(row.status)}`}>{row.status}</span>
