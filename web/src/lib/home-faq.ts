@@ -7,7 +7,7 @@ export const HOME_FAQS: HomeFaqItem[] = [
   {
     question: 'What are natural casings?',
     answer:
-      'Natural casings are cleaned animal intestines used for sausages and specialty meats — mainly sheep casings, hog casings, and beef casings. Buyers care about calibre, salt grade, packing, and origin. CasingConnect software is built for companies in that trade, not for phone cases or other “casing” products.',
+      'Natural casings are cleaned animal intestines used for sausages and specialty meats — mainly sheep casings, hog casings, and beef casings. Buyers care about calibre, salt grade, packing, and origin. CasingConnect software is built for companies in that trade.',
   },
   {
     question: 'What is CasingConnect?',

@@ -7,9 +7,23 @@ const prisma = new PrismaClient();
 async function main() {
   const passwordHash = await bcrypt.hash('demo1234', 10);
 
-  const adminEmail = 'admin@casingconnect.demo';
+  const adminEmail = 'admin@casingconnect.com';
+  const legacyAdminEmail = 'admin@casingconnect.demo';
+  const legacyAdmin = await prisma.user.findUnique({ where: { email: legacyAdminEmail } });
   const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
-  if (!admin) {
+
+  if (legacyAdmin && !admin) {
+    await prisma.user.update({
+      where: { id: legacyAdmin.id },
+      data: { email: adminEmail, isSuperAdmin: true, name: 'CasingConnect Admin' },
+    });
+  } else if (legacyAdmin && admin && legacyAdmin.id !== admin.id) {
+    await prisma.user.update({
+      where: { id: admin.id },
+      data: { isSuperAdmin: true },
+    });
+    await prisma.user.delete({ where: { id: legacyAdmin.id } });
+  } else if (!admin) {
     await prisma.user.create({
       data: {
         name: 'CasingConnect Admin',

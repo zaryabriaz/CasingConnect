@@ -351,10 +351,10 @@ export function HomeExperience() {
           </p>
           <ul className="home-industry-points">
             <li>
-              <h3>Natural casings, not phone cases</h3>
+              <h3>Sheep, hog &amp; beef casings</h3>
               <p>
-                We serve the sausage and meat casing industry — calibres, qualities, parties, and
-                ledgers — not consumer phone accessories.
+                Built for the sausage and meat trade — calibres, salt grades, qualities, parties,
+                and ledgers in one private company account.
               </p>
             </li>
             <li>
