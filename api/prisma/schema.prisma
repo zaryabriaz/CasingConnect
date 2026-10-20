@@ -1,0 +1,698 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum BusinessActivity {
+  COLLECTOR
+  PROCESSOR
+  TRADER
+  EXPORTER
+  IMPORTER
+  COLD_STORE
+  BUYER
+}
+
+enum MarketplaceInquiryStatus {
+  OPEN
+  REPLIED
+  CLOSED
+}
+
+enum MarketplaceProspectStatus {
+  NEW
+  REVIEWED
+  DISMISSED
+  IMPORTED
+}
+
+enum TailoredSetupRequestStatus {
+  NEW
+  CONTACTED
+  CLOSED
+}
+
+enum MemberRole {
+  OWNER
+  MANAGER
+  ACCOUNTANT
+  SUPERVISOR
+  SALES
+  STAFF
+  WORKER
+}
+
+enum LocationKind {
+  PROCESSING
+  BRANCH
+  WAREHOUSE
+  COLD_STORE
+}
+
+enum PartnerRole {
+  SUPPLIER
+  CUSTOMER
+  BUYER
+  PROCESSOR
+  TRADER
+  EXPORTER
+  IMPORTER
+  COLD_STORE
+  OTHER
+}
+
+model User {
+  id           String                @id @default(uuid()) @db.Uuid
+  name         String
+  email        String                @unique
+  passwordHash String
+  isSuperAdmin Boolean               @default(false)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  memberships  Membership[]
+  inquiriesSent MarketplaceInquiry[] @relation("InquiryFromUser")
+}
+
+model Business {
+  id          String             @id @default(uuid()) @db.Uuid
+  name        String
+  legalName   String?
+  slug        String             @unique
+  activities  BusinessActivity[]
+  currency    String             @default("PKR")
+  phone       String?
+  email       String?
+  address     String?
+  city        String?
+  country     String             @default("Pakistan")
+  description String?
+  active      Boolean            @default(true)
+  /// Opt-in public Marketplace directory listing.
+  marketplaceEnabled   Boolean  @default(false)
+  marketplaceHeadline  String?
+  marketplaceBio       String?
+  marketplaceLanguages String[] @default([])
+  /// Admin allows this business to use Activate website; customers publish via portal.
+  publicSiteEnabled    Boolean  @default(false)
+  /// Customer turns their public company website on/off.
+  publicSitePublished  Boolean  @default(false)
+  publicSiteTagline    String?
+  publicSiteHeadline   String?
+  publicSiteAbout      String?
+  publicSiteProducts   String?
+  publicSiteMarkets    String?
+  /// Brand colours for the public site (hex).
+  publicSitePrimaryColor String @default("#0b342b")
+  publicSiteAccentColor  String @default("#b8923f")
+  /// Relative URL under /uploads for the hero cover image.
+  publicSiteCoverUrl     String?
+  /// Relative URL under /uploads for the company logo.
+  publicSiteLogoUrl      String?
+  /// Gallery image URLs under /uploads (max 12).
+  publicSiteGallery      String[] @default([])
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  memberships Membership[]
+  locations   Location[]
+  casingTypes       CasingType[]
+  qualities         Quality[]
+  units             Unit[]
+  partners          Partner[]
+  sequences         Sequence[]
+  batches           Batch[]
+  receipts          MaterialReceipt[]
+  movements         InventoryMovement[]
+  packages          MaterialPackage[]
+  expenses          DailyExpense[]
+  stockOperations      StockOperation[]
+  productionEntries    ProductionEntry[]
+  materialConversions  MaterialConversion[]
+  sales                Sale[]
+  ledgerPayments       LedgerPayment[]
+  marketplaceListings  MarketplaceListing[]
+  inquiriesReceived    MarketplaceInquiry[] @relation("InquiryToBusiness")
+  inquiriesSent        MarketplaceInquiry[] @relation("InquiryFromBusiness")
+}
+
+model Membership {
+  id                String               @id @default(uuid()) @db.Uuid
+  businessId        String               @db.Uuid
+  userId            String               @db.Uuid
+  role              MemberRole
+  title             String?
+  active            Boolean              @default(true)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  business          Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user              User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  issueLines          StockOperationLine[]
+  productionEntries   ProductionEntry[]
+  materialConversions MaterialConversion[]
+  expenses            DailyExpense[]
+
+  @@unique([businessId, userId])
+  @@index([userId])
+  @@index([businessId, role, active])
+}
+
+model Location {
+  id         String       @id @default(uuid()) @db.Uuid
+  businessId String       @db.Uuid
+  name       String
+  kind       LocationKind
+  address    String?
+  city       String?
+  country    String?
+  phone      String?
+  active     Boolean      @default(true)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  business   Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, name])
+  @@index([businessId])
+}
+
+model CasingType {
+  id                String            @id @default(uuid()) @db.Uuid
+  businessId        String            @db.Uuid
+  code              String
+  name              String
+  active            Boolean           @default(true)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  business          Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  qualities         Quality[]
+  productionEntries ProductionEntry[]
+  marketplaceListings MarketplaceListing[]
+
+  @@unique([businessId, code])
+  @@index([businessId])
+}
+
+model Quality {
+  id           String                  @id @default(uuid()) @db.Uuid
+  businessId   String                  @db.Uuid
+  casingTypeId String                  @db.Uuid
+  code         String
+  name         String
+  sortOrder    Int                     @default(0)
+  active       Boolean                 @default(true)
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  business     Business                @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  casingType   CasingType              @relation(fields: [casingTypeId], references: [id], onDelete: Cascade)
+  productionOutputs       ProductionOutputLine[]
+  materialConversionHanks MaterialConversionHank[]
+  marketplaceListings     MarketplaceListing[]
+
+  @@unique([businessId, casingTypeId, code])
+  @@index([businessId])
+}
+
+model Unit {
+  id              String   @id @default(uuid()) @db.Uuid
+  businessId      String   @db.Uuid
+  code            String
+  name            String
+  comparableGroup String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, code])
+  @@index([businessId])
+}
+
+model Partner {
+  id           String          @id @default(uuid()) @db.Uuid
+  businessId   String          @db.Uuid
+  name         String
+  roles        PartnerRole[]
+  phone        String?
+  email        String?
+  country      String?
+  address      String?
+  currency     String?
+  paymentTerms String?
+  notes        String?
+  active       Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  business     Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  ledgerPayments LedgerPayment[]
+
+  @@index([businessId, active])
+}
+
+enum LedgerPaymentDirection {
+  RECEIVED
+  PAID
+}
+
+model LedgerPayment {
+  id             String                 @id @default(uuid()) @db.Uuid
+  businessId     String                 @db.Uuid
+  partnerId      String                 @db.Uuid
+  reference      String
+  date           String
+  direction      LedgerPaymentDirection
+  amount         Decimal                @db.Decimal(14, 2)
+  currency       String
+  method         CreditInstrument       @default(NONE)
+  cashPaidTo     String?
+  chequeNumber   String?
+  bankName       String?
+  instrumentNote String?
+  notes          String?
+  createdAt      DateTime               @default(now())
+  business       Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  partner        Partner                @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+
+  @@unique([businessId, reference])
+  @@index([businessId, partnerId, date])
+  @@index([partnerId])
+}
+
+enum IncomingMaterial {
+  RODA
+  EIGHTEEN_UP
+  QUALITY
+}
+
+enum Ownership {
+  COMPANY
+  CUSTOMER
+}
+
+model Sequence {
+  businessId String   @db.Uuid
+  key        String
+  value      Int      @default(0)
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@id([businessId, key])
+}
+
+model Batch {
+  id           String           @id @default(uuid()) @db.Uuid
+  businessId   String           @db.Uuid
+  reference    String
+  casingTypeId String           @db.Uuid
+  qualityId    String?          @db.Uuid
+  materialForm IncomingMaterial
+  stage        String           @default("RAW")
+  ownership    Ownership
+  partnerId    String?          @db.Uuid
+  locationId   String?          @db.Uuid
+  quantity     Decimal          @db.Decimal(14, 3)
+  unitId       String           @db.Uuid
+  createdAt    DateTime         @default(now())
+  business     Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, reference])
+  @@index([businessId])
+}
+
+model MaterialReceipt {
+  id           String           @id @default(uuid()) @db.Uuid
+  businessId   String           @db.Uuid
+  reference    String
+  date         String
+  partnerId    String           @db.Uuid
+  materialForm IncomingMaterial
+  casingTypeId String           @db.Uuid
+  qualityId    String?          @db.Uuid
+  qualityText  String
+  quantity     Decimal          @db.Decimal(14, 3)
+  unitId       String           @db.Uuid
+  rate         Decimal?         @db.Decimal(14, 2)
+  currency     String
+  ownership    Ownership        @default(COMPANY)
+  locationId   String?          @db.Uuid
+  batchId      String           @db.Uuid
+  notes            String?
+  destination      Destination      @default(FACTORY)
+  paymentMode      PaymentMode      @default(CASH)
+  cashPaidTo       String?
+  creditInstrument CreditInstrument @default(NONE)
+  chequeNumber     String?
+  bankName         String?
+  instrumentNote   String?
+  createdAt        DateTime         @default(now())
+  business         Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  packages         MaterialPackage[]
+
+  @@unique([businessId, reference])
+  @@index([businessId, date])
+  @@index([businessId, paymentMode])
+}
+
+enum Destination {
+  FACTORY
+  STORE
+}
+
+enum PaymentMode {
+  CASH
+  CREDIT
+}
+
+enum CreditInstrument {
+  NONE
+  CHEQUE
+  OTHER
+}
+
+enum PackageKind {
+  BAG
+  DRUM
+}
+
+enum PackageStatus {
+  IN_STORE
+  IN_FACTORY
+  ISSUED
+}
+
+enum StockOpType {
+  STORE_TO_FACTORY
+  ISSUE_TO_PERSON
+  CONVERT
+}
+
+model MaterialPackage {
+  id            String          @id @default(uuid()) @db.Uuid
+  businessId    String          @db.Uuid
+  receiptId     String          @db.Uuid
+  kind          PackageKind
+  packageNumber String
+  quantity      Decimal         @db.Decimal(14, 3)
+  status        PackageStatus   @default(IN_STORE)
+  issuedTo      String?
+  receipt       MaterialReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  business      Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  operationLinks StockOperationPackage[]
+
+  @@unique([businessId, kind, packageNumber])
+  @@index([receiptId])
+  @@index([businessId, status])
+}
+
+model StockOperation {
+  id          String                  @id @default(uuid()) @db.Uuid
+  businessId  String                  @db.Uuid
+  reference   String
+  date        String
+  type        StockOpType
+  notes       String?
+  createdAt   DateTime                @default(now())
+  business    Business                @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  lines       StockOperationLine[]
+  packages    StockOperationPackage[]
+
+  @@unique([businessId, reference])
+  @@index([businessId, date])
+}
+
+model StockOperationLine {
+  id           String           @id @default(uuid()) @db.Uuid
+  operationId  String           @db.Uuid
+  membershipId String?          @db.Uuid
+  personName   String
+  materialForm IncomingMaterial
+  quantity     Decimal          @db.Decimal(14, 3)
+  operation    StockOperation   @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  membership   Membership?      @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+
+  @@index([operationId])
+  @@index([membershipId])
+}
+
+model StockOperationPackage {
+  id          String          @id @default(uuid()) @db.Uuid
+  operationId String          @db.Uuid
+  packageId   String          @db.Uuid
+  quantity    Decimal         @db.Decimal(14, 3)
+  operation   StockOperation  @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  package     MaterialPackage @relation(fields: [packageId], references: [id], onDelete: Restrict)
+
+  @@unique([operationId, packageId])
+  @@index([packageId])
+}
+
+model InventoryMovement {
+  id            String    @id @default(uuid()) @db.Uuid
+  businessId    String    @db.Uuid
+  date          String
+  reason        String
+  batchId       String?   @db.Uuid
+  locationId    String?   @db.Uuid
+  ownership     Ownership
+  stage         String
+  casingTypeId  String    @db.Uuid
+  qualityId     String?   @db.Uuid
+  quantityDelta Decimal   @db.Decimal(14, 3)
+  unitId        String    @db.Uuid
+  sourceKey     String
+  createdAt     DateTime  @default(now())
+  business      Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, sourceKey])
+  @@index([businessId, batchId])
+}
+
+model DailyExpense {
+  id           String      @id @default(uuid()) @db.Uuid
+  businessId   String      @db.Uuid
+  date         String
+  sortOrder    Int         @default(0)
+  particulars  String
+  category     String
+  bags         Decimal?    @db.Decimal(14, 3)
+  rate         Decimal?    @db.Decimal(14, 2)
+  amount       Decimal     @db.Decimal(14, 2)
+  paidTo       String?
+  /// When category is Labour, optional link to the worker who was paid.
+  membershipId String?     @db.Uuid
+  notes        String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  business     Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  membership   Membership? @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+
+  @@index([businessId, date])
+  @@index([membershipId])
+}
+
+model ProductionEntry {
+  id           String                  @id @default(uuid()) @db.Uuid
+  businessId   String                  @db.Uuid
+  casingTypeId String                  @db.Uuid
+  membershipId String?                 @db.Uuid
+  date         String
+  personName   String
+  notes        String?
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  business     Business                @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  casingType   CasingType              @relation(fields: [casingTypeId], references: [id], onDelete: Restrict)
+  membership   Membership?             @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+  outputs      ProductionOutputLine[]
+
+  @@unique([businessId, date, personName, casingTypeId])
+  @@index([businessId, date, casingTypeId])
+  @@index([membershipId])
+}
+
+/// Yard conversion: Roda → 18/UP, or Roda/18/UP → finished qualities (hanks).
+model MaterialConversion {
+  id           String                   @id @default(uuid()) @db.Uuid
+  businessId   String                   @db.Uuid
+  reference    String
+  date         String
+  membershipId String?                  @db.Uuid
+  personName   String
+  fromForm     IncomingMaterial
+  fromQuantity Decimal                  @db.Decimal(14, 3)
+  /// Set when converting to another raw form (usually EIGHTEEN_UP). Null when cutting to hanks.
+  toForm       IncomingMaterial?
+  /// Hank count produced when toForm is set (e.g. 18/UP hanks). Defaults to fromQuantity when omitted.
+  toQuantity   Decimal?                 @db.Decimal(14, 3)
+  /// Optional labour rate per hank for this conversion.
+  labourRate   Decimal?                 @db.Decimal(14, 2)
+  /// labourRate × hanks (18/UP toQuantity, or sum of quality hank lines).
+  labourAmount Decimal?                 @db.Decimal(14, 2)
+  casingTypeId String?
+  notes        String?
+  createdAt    DateTime                 @default(now())
+  business     Business                 @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  membership   Membership?              @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+  hankLines    MaterialConversionHank[]
+
+  @@unique([businessId, reference])
+  @@index([businessId, date])
+  @@index([membershipId])
+}
+
+model MaterialConversionHank {
+  id           String             @id @default(uuid()) @db.Uuid
+  conversionId String             @db.Uuid
+  qualityId    String             @db.Uuid
+  quantity     Decimal            @db.Decimal(14, 3)
+  conversion   MaterialConversion @relation(fields: [conversionId], references: [id], onDelete: Cascade)
+  quality      Quality            @relation(fields: [qualityId], references: [id], onDelete: Restrict)
+
+  @@unique([conversionId, qualityId])
+  @@index([qualityId])
+}
+
+model ProductionOutputLine {
+  id        String          @id @default(uuid()) @db.Uuid
+  entryId   String          @db.Uuid
+  qualityId String          @db.Uuid
+  quantity  Decimal         @db.Decimal(14, 3)
+  entry     ProductionEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  quality   Quality         @relation(fields: [qualityId], references: [id], onDelete: Restrict)
+
+  @@unique([entryId, qualityId])
+  @@index([qualityId])
+}
+
+enum SaleChannel {
+  LOCAL
+  EXPORT
+}
+
+model Sale {
+  id                 String           @id @default(uuid()) @db.Uuid
+  businessId         String           @db.Uuid
+  reference          String
+  date               String
+  partnerId          String           @db.Uuid
+  channel            SaleChannel      @default(LOCAL)
+  currency           String
+  destinationCountry String?
+  exportRef          String?
+  notes              String?
+  paymentMode        PaymentMode      @default(CASH)
+  cashPaidTo         String?
+  creditInstrument   CreditInstrument @default(NONE)
+  chequeNumber       String?
+  bankName           String?
+  instrumentNote     String?
+  createdAt          DateTime         @default(now())
+  business           Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  lines              SaleLine[]
+
+  @@unique([businessId, reference])
+  @@index([businessId, date])
+  @@index([businessId, paymentMode])
+  @@index([businessId, channel])
+}
+
+model SaleLine {
+  id           String  @id @default(uuid()) @db.Uuid
+  saleId       String  @db.Uuid
+  casingTypeId String  @db.Uuid
+  qualityId    String  @db.Uuid
+  qualityText  String
+  quantity     Decimal @db.Decimal(14, 3)
+  unitId       String  @db.Uuid
+  rate         Decimal? @db.Decimal(14, 2)
+  sale         Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+  @@index([qualityId])
+}
+
+/// Public trade-board offer. Quantity is informational in v1 (not locked to stock).
+model MarketplaceListing {
+  id               String    @id @default(uuid()) @db.Uuid
+  businessId       String    @db.Uuid
+  casingTypeId     String?   @db.Uuid
+  qualityId        String?   @db.Uuid
+  qualityText      String
+  quantity         Decimal   @db.Decimal(14, 3)
+  unitLabel        String
+  currency         String
+  pricePerUnit     Decimal?  @db.Decimal(14, 2)
+  destinationHint  String?
+  active           Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  business         Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  casingType       CasingType? @relation(fields: [casingTypeId], references: [id], onDelete: SetNull)
+  quality          Quality?    @relation(fields: [qualityId], references: [id], onDelete: SetNull)
+  inquiries        MarketplaceInquiry[]
+
+  @@index([businessId, active])
+  @@index([currency])
+  @@index([qualityText])
+}
+
+model MarketplaceInquiry {
+  id             String                    @id @default(uuid()) @db.Uuid
+  listingId      String?                   @db.Uuid
+  toBusinessId   String                    @db.Uuid
+  fromUserId     String                    @db.Uuid
+  fromBusinessId String?                   @db.Uuid
+  message        String
+  contactEmail   String
+  status         MarketplaceInquiryStatus  @default(OPEN)
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+  listing        MarketplaceListing?       @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  toBusiness     Business                  @relation("InquiryToBusiness", fields: [toBusinessId], references: [id], onDelete: Cascade)
+  fromUser       User                      @relation("InquiryFromUser", fields: [fromUserId], references: [id], onDelete: Cascade)
+  fromBusiness   Business?                 @relation("InquiryFromBusiness", fields: [fromBusinessId], references: [id], onDelete: SetNull)
+
+  @@index([toBusinessId, status])
+  @@index([fromUserId])
+  @@index([fromBusinessId])
+  @@index([listingId])
+}
+
+/// Admin-discovered company lead for Marketplace outreach (not a live Business yet).
+model MarketplaceProspect {
+  id          String                     @id @default(uuid()) @db.Uuid
+  name        String
+  country     String?
+  city        String?
+  website     String?
+  email       String?
+  phone       String?
+  sourceUrl   String
+  sourceLabel String?
+  snippet     String?
+  status      MarketplaceProspectStatus  @default(NEW)
+  notes       String?
+  createdAt   DateTime                   @default(now())
+  updatedAt   DateTime                   @updatedAt
+
+  @@unique([name, sourceUrl])
+  @@index([status])
+  @@index([country])
+}
+
+/// Public request for a tailored CasingConnect setup (often outside Pakistan).
+model TailoredSetupRequest {
+  id          String                      @id @default(uuid()) @db.Uuid
+  name        String
+  email       String
+  phone       String?
+  companyName String?
+  country     String
+  message     String
+  status      TailoredSetupRequestStatus  @default(NEW)
+  notes       String?
+  createdAt   DateTime                    @default(now())
+  updatedAt   DateTime                    @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+}

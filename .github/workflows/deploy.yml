@@ -1,0 +1,114 @@
+name: Deploy production
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build API + Web
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate --schema api/prisma/schema.prisma
+
+      - name: Build API
+        run: npm run build -w casingconnect-api
+
+      - name: Build Web
+        env:
+          NEXT_PUBLIC_API_URL: https://casingconnect.com/api/v1
+          NEXT_PUBLIC_SITE_URL: https://casingconnect.com
+        run: npm run build -w casingconnect-web
+
+  deploy:
+    name: Deploy to EC2
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Trust host key
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Sync code to server
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          rsync -az --delete \
+            -e "ssh -o StrictHostKeyChecking=yes" \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude 'node_modules/' \
+            --exclude '.next/' \
+            --exclude '.pgdata/' \
+            --exclude '.env.production' \
+            --exclude 'api/.env' \
+            --exclude 'web/.env' \
+            --exclude 'web/.env.local' \
+            --exclude 'deploy/certbot/' \
+            --exclude 'deploy/nginx/active.conf' \
+            --exclude 'api/uploads/' \
+            --exclude 'deploy/casingconnect-deploy.tar.gz' \
+            --exclude '*.log' \
+            ./ "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
+
+      - name: Build and restart containers
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=yes \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "cd '${DEPLOY_PATH}' && chmod +x deploy/deploy.sh && ./deploy/deploy.sh"
+
+      - name: Health check
+        run: |
+          set -euo pipefail
+          sleep 20
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 https://casingconnect.com/ || true)
+            echo "Attempt $i → HTTP $code"
+            if [[ "$code" == "200" ]]; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Site did not return HTTP 200 after deploy"
+          exit 1

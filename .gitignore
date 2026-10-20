@@ -1,0 +1,21 @@
+node_modules
+dist
+.next
+.pgdata
+api/.env
+web/.env
+web/.env.local
+.env.production
+deploy/.env.production
+deploy/casingconnect-deploy.tar.gz
+deploy/certbot/
+deploy/nginx/active.conf
+*.log
+.DS_Store
+coverage
+api/uploads/public-sites/*
+!api/uploads/public-sites/default-cover.jpg
+!api/uploads/.gitkeep
+
+# stray local scratch files (do not commit)
+]*

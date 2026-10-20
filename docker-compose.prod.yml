@@ -1,0 +1,82 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: casingconnect
+      POSTGRES_USER: casingconnect
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U casingconnect -d casingconnect']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://casingconnect:${POSTGRES_PASSWORD}@db:5432/casingconnect
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_SECONDS: ${JWT_EXPIRES_SECONDS:-2592000}
+      PORT: '3010'
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://casingconnect.com,https://www.casingconnect.com}
+      CAPTCHA_SECRET: ${CAPTCHA_SECRET:-}
+      MAIL_TO: ${MAIL_TO:-info@casingconnect.com}
+      MAIL_FROM: ${MAIL_FROM:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+    volumes:
+      - uploads:/app/api/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://casingconnect.com/api/v1}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-https://casingconnect.com}
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://casingconnect.com/api/v1}
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-https://casingconnect.com}
+      HOSTNAME: 0.0.0.0
+      PORT: '3011'
+    command: ['npx', 'next', 'start', '--hostname', '0.0.0.0', '--port', '3011']
+    depends_on:
+      - api
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./deploy/nginx/active.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/nginx/sitemap.xml:/etc/nginx/sitemap.xml:ro
+      - ./deploy/certbot/www:/var/www/certbot:ro
+      - ./deploy/certbot/conf:/etc/letsencrypt:ro
+    depends_on:
+      - api
+      - web
+
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - ./deploy/certbot/www:/var/www/certbot
+      - ./deploy/certbot/conf:/etc/letsencrypt
+
+volumes:
+  pgdata:
+  uploads:
