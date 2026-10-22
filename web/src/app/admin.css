@@ -654,6 +654,7 @@
 
 .admin-field input,
 .admin-field select,
+.admin-field textarea,
 .admin-toolbar select {
   width: 100%;
   min-height: 2.5rem;
@@ -662,10 +663,18 @@
   border-radius: 10px;
   background: #fbfcfb;
   color: var(--admin-ink);
+  font: inherit;
+}
+
+.admin-field textarea {
+  min-height: 5rem;
+  resize: vertical;
+  line-height: 1.45;
 }
 
 .admin-field input:focus,
 .admin-field select:focus,
+.admin-field textarea:focus,
 .admin-toolbar select:focus {
   outline: 2px solid rgba(20, 85, 68, 0.2);
   outline-offset: 1px;

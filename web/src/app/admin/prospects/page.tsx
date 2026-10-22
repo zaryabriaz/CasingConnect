@@ -24,7 +24,7 @@ type Prospect = {
 };
 
 type CampaignTemplate = {
-  id: 'SOFTWARE' | 'MARKETPLACE' | 'TAILORED' | 'COMBINED';
+  id: 'INTERNATIONAL' | 'PAKISTAN' | 'MARKETPLACE' | 'TAILORED' | 'COMBINED';
   label: string;
   description: string;
   subject: string;
@@ -62,6 +62,18 @@ function hasEmail(row: Prospect) {
   return Boolean(row.email?.includes('@'));
 }
 
+function parseEmailList(value: string) {
+  const seen = new Set<string>();
+  const emails: string[] = [];
+  for (const part of value.split(/[\s,;]+/)) {
+    const email = part.trim().toLowerCase();
+    if (!email.includes('@') || !email.includes('.') || seen.has(email)) continue;
+    seen.add(email);
+    emails.push(email);
+  }
+  return emails;
+}
+
 export default function AdminProspectsPage() {
   useAdminSession();
   const [items, setItems] = useState<Prospect[]>([]);
@@ -73,8 +85,9 @@ export default function AdminProspectsPage() {
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [templates, setTemplates] = useState<CampaignTemplate[]>([]);
-  const [template, setTemplate] = useState<CampaignTemplate['id']>('SOFTWARE');
+  const [template, setTemplate] = useState<CampaignTemplate['id']>('INTERNATIONAL');
   const [skipAlreadySent, setSkipAlreadySent] = useState(true);
+  const [customEmailsText, setCustomEmailsText] = useState('');
   const [previewSubject, setPreviewSubject] = useState('');
   const [previewText, setPreviewText] = useState('');
   const [previewHtml, setPreviewHtml] = useState('');
@@ -144,13 +157,17 @@ export default function AdminProspectsPage() {
     () => selectedIds.filter((id) => items.some((row) => row.id === id && hasEmail(row))),
     [selectedIds, items],
   );
+  const customEmails = useMemo(() => parseEmailList(customEmailsText), [customEmailsText]);
+  const recipientCount = selectedWithEmail.length + customEmails.length;
 
   const smtpConfigured = templates[0]?.smtpConfigured ?? false;
   const activeTemplate = templates.find((item) => item.id === template);
   const previewToEmail =
+    customEmails[0] ??
     selectedWithEmail
       .map((id) => items.find((row) => row.id === id))
-      .find((row) => row?.email)?.email ?? 'prospect@example.com';
+      .find((row) => row?.email)?.email ??
+    'prospect@example.com';
 
   function applySelectedCompanyToPreview() {
     const first = selectedWithEmail
@@ -258,15 +275,19 @@ export default function AdminProspectsPage() {
   }
 
   async function sendCampaign() {
-    if (selectedWithEmail.length === 0) {
-      setError('Select at least one prospect that has an email address.');
+    if (recipientCount === 0) {
+      setError('Select a prospect with email, or paste at least one custom email.');
       return;
     }
-    if (
-      !confirm(
-        `Send “${template}” campaign to ${selectedWithEmail.length} company email(s)?`,
-      )
-    ) {
+    if (recipientCount > 25) {
+      setError('Send at most 25 emails per batch (selected + custom).');
+      return;
+    }
+    const parts = [
+      selectedWithEmail.length ? `${selectedWithEmail.length} prospect(s)` : null,
+      customEmails.length ? `${customEmails.length} custom email(s)` : null,
+    ].filter(Boolean);
+    if (!confirm(`Send “${template}” campaign to ${parts.join(' + ')}?`)) {
       return;
     }
     setBusy(true);
@@ -277,6 +298,8 @@ export default function AdminProspectsPage() {
         method: 'POST',
         body: JSON.stringify({
           prospectIds: selectedWithEmail,
+          customEmails,
+          companyName: previewCompany.trim() || undefined,
           template,
           skipAlreadySent,
         }),
@@ -292,6 +315,7 @@ export default function AdminProspectsPage() {
             : ''),
       );
       clearSelection();
+      setCustomEmailsText('');
       await load(status);
     } catch (caught) {
       setError(errorText(caught));
@@ -384,8 +408,8 @@ export default function AdminProspectsPage() {
         <div>
           <h2>Email campaign</h2>
           <p>
-            Select companies with email below, choose a template, preview the message, then send.
-            Max 25 per batch.
+            Select companies below and/or paste any custom emails, choose a template, preview, then
+            send. Max 25 recipients per batch.
             {!smtpConfigured ? (
               <>
                 {' '}
@@ -408,29 +432,36 @@ export default function AdminProspectsPage() {
                   ? templates
                   : [
                       {
-                        id: 'SOFTWARE' as const,
-                        label: 'Software for exporters',
+                        id: 'INTERNATIONAL' as const,
+                        label: 'International clients',
+                        description: '',
+                        subject: '',
+                        smtpConfigured: false,
+                      },
+                      {
+                        id: 'PAKISTAN' as const,
+                        label: 'Pakistan exporters / manufacturers',
                         description: '',
                         subject: '',
                         smtpConfigured: false,
                       },
                       {
                         id: 'COMBINED' as const,
-                        label: 'Marketplace + system',
+                        label: 'Marketplace + system (short)',
                         description: '',
                         subject: '',
                         smtpConfigured: false,
                       },
                       {
                         id: 'MARKETPLACE' as const,
-                        label: 'Marketplace invite',
+                        label: 'Marketplace invite only',
                         description: '',
                         subject: '',
                         smtpConfigured: false,
                       },
                       {
                         id: 'TAILORED' as const,
-                        label: 'Tailored system setup',
+                        label: 'Tailored system only',
                         description: '',
                         subject: '',
                         smtpConfigured: false,
@@ -447,12 +478,25 @@ export default function AdminProspectsPage() {
               <p className="admin-campaign-desc">{activeTemplate.description}</p>
             ) : null}
             <label className="admin-field">
-              <span>Preview as company</span>
+              <span>Custom emails (optional)</span>
+              <textarea
+                value={customEmailsText}
+                onChange={(event) => setCustomEmailsText(event.target.value)}
+                placeholder={'one@company.com\ntwo@exporter.com'}
+                rows={3}
+              />
+              <span className="admin-campaign-desc">
+                Paste any addresses (comma or new line). {customEmails.length} parsed
+                {customEmails.length ? ` · ${customEmails.slice(0, 3).join(', ')}${customEmails.length > 3 ? '…' : ''}` : ''}.
+              </span>
+            </label>
+            <label className="admin-field">
+              <span>Company name in greeting</span>
               <div className="admin-campaign-company-row">
                 <input
                   value={previewCompany}
                   onChange={(event) => setPreviewCompany(event.target.value)}
-                  placeholder="Company name in greeting"
+                  placeholder="Used for preview + custom emails"
                 />
                 <button
                   type="button"
@@ -470,7 +514,7 @@ export default function AdminProspectsPage() {
                 checked={skipAlreadySent}
                 onChange={(event) => setSkipAlreadySent(event.target.checked)}
               />
-              <span>Skip already sent this template</span>
+              <span>Skip already sent this template (prospects only)</span>
             </label>
             <div className="admin-campaign-actions">
               <button
@@ -485,17 +529,20 @@ export default function AdminProspectsPage() {
                 type="button"
                 className="admin-btn ghost"
                 disabled={busy}
-                onClick={clearSelection}
+                onClick={() => {
+                  clearSelection();
+                  setCustomEmailsText('');
+                }}
               >
                 Clear
               </button>
               <button
                 type="button"
                 className="admin-btn primary"
-                disabled={busy || !smtpConfigured || selectedWithEmail.length === 0}
+                disabled={busy || !smtpConfigured || recipientCount === 0 || recipientCount > 25}
                 onClick={() => void sendCampaign()}
               >
-                {busy ? 'Sending…' : `Send to ${selectedWithEmail.length}`}
+                {busy ? 'Sending…' : `Send to ${recipientCount}`}
               </button>
             </div>
           </div>

@@ -2,9 +2,9 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { BusinessActivity, MarketplaceProspectStatus, MemberRole } from '@prisma/client';
 import {
   ArrayMaxSize,
-  ArrayMinSize,
   IsArray,
   IsBoolean,
+  IsEmail,
   IsEnum,
   IsIn,
   IsInt,
@@ -174,12 +174,34 @@ export class MarketplaceProspectDto {
 }
 
 export class SendCampaignDto {
-  @ApiProperty({ type: [String], format: 'uuid' })
+  @ApiPropertyOptional({
+    type: [String],
+    format: 'uuid',
+    description: 'Prospect IDs from the company finder. Optional when customEmails is provided.',
+  })
+  @IsOptional()
   @IsArray()
-  @ArrayMinSize(1)
   @ArrayMaxSize(25)
   @IsUUID('4', { each: true })
-  prospectIds!: string[];
+  prospectIds?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Extra recipient emails (any address). Combined with prospectIds, max 25 total.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(25)
+  @IsEmail({}, { each: true })
+  customEmails?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Company name used in the greeting for customEmails (defaults to “there”).',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  companyName?: string;
 
   @ApiProperty({ enum: CAMPAIGN_TEMPLATES })
   @IsIn([...CAMPAIGN_TEMPLATES])

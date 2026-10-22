@@ -72,10 +72,18 @@ export class CampaignsService {
     }
 
     const ids = [...new Set(dto.prospectIds ?? [])];
-    if (ids.length === 0) {
-      throw new BadRequestException('Select at least one prospect.');
+    const customEmails = [
+      ...new Set(
+        (dto.customEmails ?? [])
+          .map((value) => value.trim().toLowerCase())
+          .filter((value) => value.includes('@')),
+      ),
+    ];
+    const totalRecipients = ids.length + customEmails.length;
+    if (totalRecipients === 0) {
+      throw new BadRequestException('Select at least one prospect or add a custom email.');
     }
-    if (ids.length > MAX_BATCH) {
+    if (totalRecipients > MAX_BATCH) {
       throw new BadRequestException(`Send at most ${MAX_BATCH} emails per batch.`);
     }
 
@@ -86,11 +94,7 @@ export class CampaignsService {
 
     const def = this.templateDefs().find((item) => item.id === template)!;
     const siteUrl = this.siteUrl();
-    const prospects = await this.prisma.marketplaceProspect.findMany({
-      where: { id: { in: ids } },
-    });
-
-    const byId = new Map(prospects.map((row) => [row.id, row]));
+    const customCompanyName = dto.companyName?.trim() || 'there';
     const results: Array<{
       prospectId: string;
       name: string;
@@ -99,43 +103,97 @@ export class CampaignsService {
       reason?: string;
     }> = [];
 
-    for (const id of ids) {
-      const prospect = byId.get(id);
-      if (!prospect) {
-        results.push({
-          prospectId: id,
-          name: 'Unknown',
-          email: null,
-          ok: false,
-          reason: 'not_found',
-        });
-        continue;
-      }
+    if (ids.length > 0) {
+      const prospects = await this.prisma.marketplaceProspect.findMany({
+        where: { id: { in: ids } },
+      });
+      const byId = new Map(prospects.map((row) => [row.id, row]));
 
-      const email = prospect.email?.trim().toLowerCase() ?? '';
-      if (!email || !email.includes('@')) {
-        results.push({
-          prospectId: id,
-          name: prospect.name,
-          email: prospect.email,
-          ok: false,
-          reason: 'no_email',
-        });
-        continue;
-      }
+      for (const id of ids) {
+        const prospect = byId.get(id);
+        if (!prospect) {
+          results.push({
+            prospectId: id,
+            name: 'Unknown',
+            email: null,
+            ok: false,
+            reason: 'not_found',
+          });
+          continue;
+        }
 
-      if (dto.skipAlreadySent && prospect.lastCampaignAt && prospect.lastCampaignTemplate === template) {
+        const email = prospect.email?.trim().toLowerCase() ?? '';
+        if (!email || !email.includes('@')) {
+          results.push({
+            prospectId: id,
+            name: prospect.name,
+            email: prospect.email,
+            ok: false,
+            reason: 'no_email',
+          });
+          continue;
+        }
+
+        if (
+          dto.skipAlreadySent &&
+          prospect.lastCampaignAt &&
+          prospect.lastCampaignTemplate === template
+        ) {
+          results.push({
+            prospectId: id,
+            name: prospect.name,
+            email,
+            ok: false,
+            reason: 'already_sent',
+          });
+          continue;
+        }
+
+        const body = def.build(prospect.name, siteUrl);
+        const sent = await this.mail.sendOutreach({
+          to: email,
+          subject: def.subject,
+          text: body.text,
+          html: body.html,
+        });
+
+        if (!sent.sent) {
+          results.push({
+            prospectId: id,
+            name: prospect.name,
+            email,
+            ok: false,
+            reason: sent.reason,
+          });
+          continue;
+        }
+
+        await this.prisma.marketplaceProspect.update({
+          where: { id },
+          data: {
+            lastCampaignAt: new Date(),
+            lastCampaignTemplate: template,
+            campaignSendCount: { increment: 1 },
+            status:
+              prospect.status === MarketplaceProspectStatus.NEW
+                ? MarketplaceProspectStatus.REVIEWED
+                : undefined,
+          },
+        });
+
         results.push({
           prospectId: id,
           name: prospect.name,
           email,
-          ok: false,
-          reason: 'already_sent',
+          ok: true,
         });
-        continue;
-      }
 
-      const body = def.build(prospect.name, siteUrl);
+        await sleep(SEND_GAP_MS);
+      }
+    }
+
+    for (const email of customEmails) {
+      const body = def.build(customCompanyName, siteUrl);
       const sent = await this.mail.sendOutreach({
         to: email,
         subject: def.subject,
@@ -143,44 +201,21 @@ export class CampaignsService {
         html: body.html,
       });
 
-      if (!sent.sent) {
-        results.push({
-          prospectId: id,
-          name: prospect.name,
-          email,
-          ok: false,
-          reason: sent.reason,
-        });
-        continue;
-      }
-
-      await this.prisma.marketplaceProspect.update({
-        where: { id },
-        data: {
-          lastCampaignAt: new Date(),
-          lastCampaignTemplate: template,
-          campaignSendCount: { increment: 1 },
-          status:
-            prospect.status === MarketplaceProspectStatus.NEW
-              ? MarketplaceProspectStatus.REVIEWED
-              : undefined,
-        },
-      });
-
       results.push({
-        prospectId: id,
-        name: prospect.name,
+        prospectId: `custom:${email}`,
+        name: customCompanyName,
         email,
-        ok: true,
+        ok: sent.sent,
+        reason: sent.sent ? undefined : sent.reason,
       });
 
-      await sleep(SEND_GAP_MS);
+      if (sent.sent) await sleep(SEND_GAP_MS);
     }
 
     const sentCount = results.filter((row) => row.ok).length;
     return {
       template,
-      requested: ids.length,
+      requested: totalRecipients,
       sent: sentCount,
       failed: results.length - sentCount,
       results,
@@ -190,28 +225,37 @@ export class CampaignsService {
   private templateDefs(): TemplateBody[] {
     return [
       {
-        id: 'SOFTWARE',
-        label: 'Software for exporters',
+        id: 'INTERNATIONAL',
+        label: 'International clients',
         description:
-          'Pitch CasingConnect software to casing companies abroad — features, industry expertise, and affordable tailored setup.',
-        subject: 'Casing business software for exporters — built by industry specialists',
+          'For companies abroad: Pakistan-proven casing software + global Marketplace for makers, importers, and exporters.',
+        subject: 'Proven casing software from Pakistan — plus a global B2B marketplace',
         build: (companyName, siteUrl) => {
           const greeting = greetingFor(companyName);
+          const features = [
+            'Private company books: buying, store & factory stock, production, sales, expenses, party ledgers',
+            'Built for natural casings — sheep, hog, and beef workflows (not generic ERP)',
+            'Global Marketplace connecting sausage makers, importers, and exporters',
+            'Optional public company website so buyers can find you',
+            'We tailor the same proven stack to your country, currency, and process',
+          ];
           const text = [
             greeting,
             '',
-            'I’m writing from CasingConnect — specialised business software for the natural casing industry (sheep, hog, and beef casings).',
+            'I’m reaching out from CasingConnect — the B2B platform we built and run for the natural casing industry in Pakistan.',
             '',
-            'We already serve multiple casing exporters who run their day-to-day operations on CasingConnect: buying, store & factory stock, production (Roda / 18/UP / qualities), sales, expenses, and party ledgers — with an optional public company website and Marketplace presence.',
+            'Today, Pakistani casing companies use CasingConnect every day to run buying → stock → production → sales with clear digital books. That live product is what we bring to international partners: not a theory deck — software already proven in this trade.',
             '',
-            'Unlike generic ERP tools, CasingConnect is designed around casing workflows: material forms, hank-based finished stock, supplier & buyer ledgers, and export-ready books.',
+            'For your company we can deliver the same solution, adapted to how you buy, process, and sell — so one system covers operations and market presence:',
+            ...features.map((item, i) => `${i + 1}. ${item}`),
             '',
-            'Our team works only in this industry. We can configure a private company system for your country, currency, and process — at competitive rates built for mid-size exporters, not enterprise software pricing.',
+            'On the Marketplace, sausage makers, importers, and exporters meet in one place — by country, product, and capability — while each company keeps private books behind the login.',
             '',
             `See the product: ${siteUrl}/`,
-            `Request a tailored setup: ${siteUrl}/tailored-setup`,
+            `Browse the Marketplace: ${siteUrl}/marketplace`,
+            `Request a tailored setup for your country: ${siteUrl}/tailored-setup`,
             '',
-            'Reply with your country and a short note on how you buy and sell today, and we will outline a simple setup plan for your company.',
+            'Reply with your country and what you produce or trade, and we will outline a practical setup for your firm.',
             '',
             'With regards,',
             'The CasingConnect team',
@@ -220,18 +264,80 @@ export class CampaignsService {
           ].join('\n');
 
           const html = outreachHtml({
-            title: 'Casing software built for exporters like you',
+            title: 'Pakistan-proven casing software — ready for your market',
             greeting,
             paragraphs: [
-              'I’m writing from <strong>CasingConnect</strong> — specialised business software for the <strong>natural casing industry</strong> (sheep, hog, and beef casings).',
-              'We already serve <strong>multiple casing exporters</strong> who run buying, store &amp; factory stock, production (Roda / 18/UP / qualities), sales, expenses, and party ledgers on CasingConnect — with an optional public company website and Marketplace presence.',
-              'Unlike generic ERP tools, CasingConnect follows <strong>casing workflows</strong>: material forms, hank-based finished stock, supplier &amp; buyer ledgers, and export-ready books.',
-              'Our team works only in this industry. We can configure a private system for your <strong>country, currency, and process</strong> — at <strong>competitive rates</strong> built for mid-size exporters, not enterprise software pricing.',
+              'I’m reaching out from <strong>CasingConnect</strong> — the B2B platform we built and run for the <strong>natural casing industry in Pakistan</strong>.',
+              'Pakistani casing companies already use CasingConnect every day for buying → stock → production → sales with clear digital books. That live product is what we offer international partners: <strong>not a concept — software proven in this trade</strong>.',
+              'For your company we can deliver the <strong>same solution</strong>, adapted to how you buy, process, and sell — one system for operations and market presence.',
             ],
+            features,
+            closing:
+              'On the <strong>Marketplace</strong>, sausage makers, importers, and exporters meet in one place — by country, product, and capability — while each firm keeps private books behind the login.',
             ctaLabel: 'Request a tailored setup',
             ctaUrl: `${siteUrl}/tailored-setup`,
-            secondaryLabel: 'See the product',
-            secondaryUrl: `${siteUrl}/`,
+            secondaryLabel: 'Browse the Marketplace',
+            secondaryUrl: `${siteUrl}/marketplace`,
+            siteUrl,
+          });
+          return { text, html };
+        },
+      },
+      {
+        id: 'PAKISTAN',
+        label: 'Pakistan exporters & manufacturers',
+        description:
+          'For local plants and exporters: digital khata, fewer day-to-day problems, and international visibility on the Marketplace.',
+        subject: 'Digital khata for your casing plant + visibility in the world market',
+        build: (companyName, siteUrl) => {
+          const greeting = greetingFor(companyName);
+          const features = [
+            'Buying with rates, bags/drums to store, and clear factory stock',
+            'Production flow: Roda → 18/UP → qualities (as you work on the floor)',
+            'Sales, expenses, and party ledgers (jama / khata) in one place',
+            'Workers and managers with role-based access — no shared notebooks',
+            'Marketplace profile so international buyers can find your company',
+            'Optional public company website linked to your listing',
+          ];
+          const text = [
+            greeting,
+            '',
+            'Assalam-o-Alaikum — I’m writing from CasingConnect, the system built for Pakistan’s natural casing plants and exporters.',
+            '',
+            'Most plants still run on paper khata, WhatsApp rates, and memory. That creates mix-ups on stock, party balances, and “who took what” from the store. CasingConnect puts the same day-to-day process on a clear system — so owners get control without changing how the floor already works.',
+            '',
+            'What you get:',
+            ...features.map((item, i) => `${i + 1}. ${item}`),
+            '',
+            'Alongside private books, the Marketplace helps Pakistani exporters and manufacturers get identified by international buyers — so your company is visible beyond local contacts.',
+            '',
+            `See how it works: ${siteUrl}/`,
+            `List on the Marketplace: ${siteUrl}/marketplace/list-company`,
+            `Ask for a company setup: ${siteUrl}/tailored-setup`,
+            '',
+            'Reply with your city and whether you export, manufacture, or both — we will show you a short demo on your own numbers.',
+            '',
+            'With regards,',
+            'The CasingConnect team',
+            siteUrl,
+            'info@casingconnect.com',
+          ].join('\n');
+
+          const html = outreachHtml({
+            title: 'Apna khata, system pe — aur duniya ko dikhao',
+            greeting,
+            paragraphs: [
+              'Assalam-o-Alaikum — I’m writing from <strong>CasingConnect</strong>, the system built for <strong>Pakistan’s natural casing plants and exporters</strong>.',
+              'Most plants still run on <strong>paper khata</strong>, WhatsApp rates, and memory. That creates mix-ups on stock, party balances, and “who took what” from the store. CasingConnect puts the <strong>same day-to-day process on a clear system</strong> — so owners get control without changing how the floor already works.',
+              'What you get:',
+            ],
+            features,
+            closing:
+              'Alongside private books, the <strong>Marketplace</strong> helps Pakistani exporters and manufacturers get <strong>identified by international buyers</strong> — so your company is visible beyond local contacts.',
+            ctaLabel: 'Ask for a company setup',
+            ctaUrl: `${siteUrl}/tailored-setup`,
+            secondaryLabel: 'List on the Marketplace',
+            secondaryUrl: `${siteUrl}/marketplace/list-company`,
             siteUrl,
           });
           return { text, html };
@@ -240,23 +346,21 @@ export class CampaignsService {
       {
         id: 'MARKETPLACE',
         label: 'Marketplace invite',
-        description: 'Invite the company to list on the CasingConnect Marketplace.',
+        description: 'Short invite to list on the CasingConnect Marketplace only.',
         subject: 'Be found by casing buyers worldwide — CasingConnect Marketplace',
         build: (companyName, siteUrl) => {
           const greeting = greetingFor(companyName);
           const text = [
             greeting,
             '',
-            'I’m writing from CasingConnect — the B2B platform purpose-built for the natural casing trade (sheep, hog, and beef casings).',
+            'I’m writing from CasingConnect — the B2B marketplace for the natural casing trade (sheep, hog, and beef casings).',
             '',
-            'More than 15 companies in Pakistan already run their full buying → stock → production → sales cycle on CasingConnect with private company books.',
+            'More than 15 companies in Pakistan already run buying → stock → production → sales on CasingConnect. We invite established casing companies to join the Marketplace directory so buyers and sellers can find partners by country, product, and capability.',
             '',
-            'We are inviting established casing companies abroad to join our Marketplace directory — so international buyers and sellers can find verified partners by country, product, and capability.',
-            '',
-            `Explore the Marketplace: ${siteUrl}/marketplace`,
+            `Explore: ${siteUrl}/marketplace`,
             `List your company: ${siteUrl}/marketplace/list-company`,
             '',
-            'Reply to this email with your company name and country, and we will help you get listed.',
+            'Reply with your company name and country, and we will help you get listed.',
             '',
             'With regards,',
             'The CasingConnect team',
@@ -268,9 +372,8 @@ export class CampaignsService {
             title: 'List your company where casing buyers look',
             greeting,
             paragraphs: [
-              'I’m writing from <strong>CasingConnect</strong> — the B2B platform purpose-built for the <strong>natural casing trade</strong> (sheep, hog, and beef casings).',
-              'More than <strong>15 companies in Pakistan</strong> already run buying → stock → production → sales on CasingConnect with private company books.',
-              'We invite established casing companies abroad to join our <strong>Marketplace directory</strong> — so buyers and sellers can find verified partners by country, product, and capability.',
+              'I’m writing from <strong>CasingConnect</strong> — the B2B marketplace for the <strong>natural casing trade</strong>.',
+              'We invite established casing companies to join our <strong>Marketplace directory</strong> — so buyers and sellers can find verified partners by country, product, and capability.',
             ],
             ctaLabel: 'Open Marketplace',
             ctaUrl: `${siteUrl}/marketplace`,
@@ -284,19 +387,18 @@ export class CampaignsService {
       {
         id: 'TAILORED',
         label: 'Tailored system setup',
-        description: 'Offer a custom company setup like the Pakistan product.',
+        description: 'Short offer for a custom company setup (any country).',
         subject: 'Private casing books for your country & currency — CasingConnect',
         build: (companyName, siteUrl) => {
           const greeting = greetingFor(companyName);
           const text = [
             greeting,
             '',
-            'CasingConnect is natural casing business software used by 15+ companies in Pakistan for the full buying-to-sell cycle: buying, store & factory stock, production, sales, expenses, and party ledgers — with an optional public company website.',
+            'CasingConnect is natural casing business software used by 15+ companies in Pakistan for buying, store & factory stock, production, sales, expenses, and party ledgers — plus an optional public company website.',
             '',
-            'We can set up the same system for your company, adapted to your country, currency, and day-to-day workflow — at competitive rates for exporters.',
+            'We can set up the same system for your company, adapted to your country, currency, and workflow.',
             '',
             `Request a tailored setup: ${siteUrl}/tailored-setup`,
-            `See the product: ${siteUrl}/`,
             '',
             'Reply with your country and preferred currency and we will follow up personally.',
             '',
@@ -310,8 +412,8 @@ export class CampaignsService {
             title: 'A casing system built around your operation',
             greeting,
             paragraphs: [
-              '<strong>CasingConnect</strong> is natural casing business software used by <strong>15+ companies in Pakistan</strong> for the full buying-to-sell cycle — buying, store &amp; factory stock, production, sales, expenses, and party ledgers — plus an optional public company website.',
-              'We can set up the same system for your firm, adapted to your <strong>country, currency, and workflow</strong> — at competitive rates for exporters.',
+              '<strong>CasingConnect</strong> is used by <strong>15+ companies in Pakistan</strong> for the full buying-to-sell cycle — plus an optional public company website.',
+              'We can set up the same system for your firm, adapted to your <strong>country, currency, and workflow</strong>.',
             ],
             ctaLabel: 'Request tailored setup',
             ctaUrl: `${siteUrl}/tailored-setup`,
@@ -323,7 +425,7 @@ export class CampaignsService {
       {
         id: 'COMBINED',
         label: 'Marketplace + system',
-        description: 'Invite to the marketplace and offer a tailored company system.',
+        description: 'Short combined invite (Marketplace listing + tailored system).',
         subject: 'Marketplace visibility + private casing software — CasingConnect',
         build: (companyName, siteUrl) => {
           const greeting = greetingFor(companyName);
@@ -334,9 +436,9 @@ export class CampaignsService {
             '',
             'In Pakistan, 15+ companies use CasingConnect for buying → stock → production → sales with private books.',
             '',
-            'For companies outside Pakistan we offer two clear next steps:',
-            `1) List your company on the Marketplace: ${siteUrl}/marketplace/list-company`,
-            `2) Request a tailored company system for your country & currency: ${siteUrl}/tailored-setup`,
+            'Two clear next steps:',
+            `1) List on the Marketplace: ${siteUrl}/marketplace/list-company`,
+            `2) Request a tailored company system: ${siteUrl}/tailored-setup`,
             '',
             'Reply with your company name and country and we will guide the right path.',
             '',
@@ -352,7 +454,7 @@ export class CampaignsService {
             paragraphs: [
               'I’m reaching out from <strong>CasingConnect</strong> — B2B software and marketplace for the natural casing trade.',
               'In <strong>Pakistan, 15+ companies</strong> use CasingConnect for buying → stock → production → sales with private books.',
-              'For companies abroad we offer two clear paths: <strong>Marketplace visibility</strong> for buyers and sellers, and/or a <strong>tailored company system</strong> for your country and currency.',
+              'Two paths: <strong>Marketplace visibility</strong> and/or a <strong>tailored company system</strong> for your country and currency.',
             ],
             ctaLabel: 'Browse Marketplace',
             ctaUrl: `${siteUrl}/marketplace`,
@@ -376,6 +478,9 @@ function outreachHtml(input: {
   title: string;
   greeting: string;
   paragraphs: string[];
+  features?: string[];
+  bullets?: string[];
+  closing?: string;
   ctaLabel: string;
   ctaUrl: string;
   secondaryLabel?: string;
@@ -385,6 +490,18 @@ function outreachHtml(input: {
   const paras = input.paragraphs
     .map((p) => `<p style="margin:0 0 14px">${p}</p>`)
     .join('');
+  const featureItems = input.features ?? input.bullets ?? [];
+  const features =
+    featureItems.length > 0
+      ? `<ul style="margin:0 0 18px;padding:0 0 0 18px;color:#243832;font-size:15px;line-height:1.55">
+          ${featureItems
+            .map((item) => `<li style="margin:0 0 8px">${escapeHtml(item)}</li>`)
+            .join('')}
+        </ul>`
+      : '';
+  const closing = input.closing
+    ? `<p style="margin:0 0 14px">${input.closing}</p>`
+    : '';
   const secondary =
     input.secondaryLabel && input.secondaryUrl
       ? `<p style="margin:14px 0 0"><a href="${escapeHtml(input.secondaryUrl)}" style="color:#145544;font-weight:700">${escapeHtml(input.secondaryLabel)} →</a></p>`
@@ -397,6 +514,8 @@ function outreachHtml(input: {
     bodyHtml: `
       <p style="margin:0 0 14px">${escapeHtml(input.greeting)}</p>
       ${paras}
+      ${features}
+      ${closing}
       ${secondary}
     `,
     ctaLabel: input.ctaLabel,

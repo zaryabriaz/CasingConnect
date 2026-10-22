@@ -1,62 +1,64 @@
-# Email setup (From: info@casingconnect.com)
+# Email setup (Gmail SMTP)
 
-Keep **forwarding** `info@casingconnect.com` → your Gmail so you still *receive* mail.  
-Use a free sender (**Resend**) so outbound mail shows **From: info@casingconnect.com** (no Spaceship mailbox required).
+When someone submits **Request a tailored setup** / listing / campaigns, the app emails via SMTP.
 
-## Recommended free path: Resend
+Keep **forwarding** `info@casingconnect.com` → your Gmail so you still *receive* mail at `info@`.  
+Outbound uses **Gmail SMTP** (App Password) — works without verifying a custom domain on Resend.
 
-**Free plan:** 100 emails/day · 3,000/month — enough for setup alerts, listing confirmations, and small campaigns.
+## Free setup with Gmail SMTP
 
-### 1. Create a Resend account
+### 1. Create a Gmail App Password
 
-1. Sign up at [https://resend.com/signup](https://resend.com/signup) (free)
-2. Open **Domains** → **Add Domain** → `casingconnect.com`
-3. Resend shows DNS records (DKIM / SPF). Add them in **Spaceship** → your domain → **DNS**
-4. Wait until the domain status is **Verified** (often ~15 minutes)
+1. Google Account → **Security**
+2. Turn on **2-Step Verification** (required)
+3. **App passwords** → create one for “Mail”
+4. Copy the 16-character password
 
-### 2. Create an API key
-
-Resend → **API Keys** → Create → copy the key (`re_…`).
-
-### 3. Put these values in server `.env.production`
+### 2. Add to local `api/.env` and server `.env.production`
 
 ```bash
 MAIL_TO=info@casingconnect.com
+MAIL_FROM=zaryabriaz@gmail.com
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=zaryabriaz@gmail.com
+SMTP_PASS=xxxx xxxx xxxx xxxx
+```
+
+(Use your real Gmail + App Password. Spaces in the app password are OK.)
+
+Gmail will show **From** as your Gmail address (it rewrites custom From). Reply-To can still be `info@casingconnect.com`.
+
+### 3. Restart API (local)
+
+```bash
+# kill and restart Nest
+cd api && npm run start:dev
+```
+
+### 4. Restart API (production)
+
+```bash
+cd ~/casingconnect
+docker compose -f docker-compose.prod.yml --env-file .env.production up -d api
+```
+
+### 5. Test
+
+Admin → Prospects → send a campaign, or submit https://casingconnect.com/tailored-setup.
+
+---
+
+## Optional later: Resend (From: info@casingconnect.com)
+
+Only after you verify `casingconnect.com` in Resend (DNS SPF/DKIM):
+
+```bash
 MAIL_FROM=info@casingconnect.com
 SMTP_HOST=smtp.resend.com
 SMTP_PORT=587
 SMTP_SECURE=false
 SMTP_USER=resend
-SMTP_PASS=re_xxxxxxxx   # your Resend API key
+SMTP_PASS=re_xxxxxxxx
 ```
-
-Same keys work in local `api/.env`.
-
-### 4. Restart / redeploy the API
-
-```bash
-cd ~/casingconnect
-./deploy/deploy.sh
-```
-
-### 5. Test
-
-Submit https://casingconnect.com/tailored-setup  
-The customer confirmation should show **From: CasingConnect \<info@casingconnect.com\>**.  
-Admin alerts still go to `info@` (forwarded to Gmail).
-
----
-
-## Why not Gmail alone?
-
-Gmail SMTP logs in as your personal Gmail and **rewrites** From to `zaryabriaz@gmail.com` unless you own a real mailbox / Send-as for `info@`. With only forwarding (no mailbox), Resend + DNS is the free fix.
-
-## Optional: other free senders
-
-| Service | Free limit | Notes |
-|---------|------------|--------|
-| **Resend** | 100/day, 3k/month | Best fit for this app (SMTP above) |
-| Brevo | 300/day | Also free; different SMTP settings |
-| SendGrid | 100/day | Also free; more setup |
-
-Stick with Resend unless you already use another provider.

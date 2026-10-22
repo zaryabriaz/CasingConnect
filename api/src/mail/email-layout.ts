@@ -9,6 +9,10 @@ export function escapeHtml(value: string) {
 }
 
 const SITE = 'https://casingconnect.com';
+/** Absolute URL — email clients block relative images. Cache-bust with site asset version. */
+const LOGO_URL = `${SITE}/casingconnect-logo.png?v=4`;
+const LOGO_WIDTH = 176;
+const LOGO_HEIGHT = 80;
 
 export function brandedEmail(input: {
   preheader?: string;
@@ -44,11 +48,17 @@ ${preheader}
   <tr><td align="center">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:580px;background:#f7fbf8;border:1px solid rgba(18,40,33,0.1)">
       <tr>
-        <td style="background:linear-gradient(135deg,#0b342b 0%,#145544 100%);padding:22px 28px">
-          <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:600;letter-spacing:-0.02em;color:#ffffff">
-            Casing<span style="color:#dbb65a">Connect</span>
-          </p>
-          <p style="margin:6px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:rgba(244,247,245,0.72)">
+        <td style="background:#ffffff;padding:22px 28px 18px;border-bottom:3px solid #0b342b">
+          <a href="${SITE}" style="text-decoration:none;border:0;outline:none" target="_blank">
+            <img
+              src="${LOGO_URL}"
+              alt="CasingConnect"
+              width="${LOGO_WIDTH}"
+              height="${LOGO_HEIGHT}"
+              style="display:block;width:${LOGO_WIDTH}px;max-width:70%;height:auto;border:0;outline:none;text-decoration:none"
+            />
+          </a>
+          <p style="margin:12px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:#6a7f75">
             Natural casing trade · B2B
           </p>
         </td>

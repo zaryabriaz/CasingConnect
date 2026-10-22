@@ -144,7 +144,9 @@ export class AdminController {
 
   @Post('campaigns/send')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Send a campaign email to selected prospects (max 25).' })
+  @ApiOperation({
+    summary: 'Send a campaign email to selected prospects and/or custom emails (max 25 total).',
+  })
   sendCampaign(@Body() dto: SendCampaignDto) {
     return this.campaigns.send({
       ...dto,
