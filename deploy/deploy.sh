@@ -34,7 +34,12 @@ else
   exit 1
 fi
 
-"${COMPOSE[@]}" -f docker-compose.prod.yml --env-file .env.production build
+# Build one image at a time — parallel api+web builds OOM a 1GB Lightsail/EC2 box.
+echo "Building API image..."
+"${COMPOSE[@]}" -f docker-compose.prod.yml --env-file .env.production build api
+echo "Building Web image..."
+"${COMPOSE[@]}" -f docker-compose.prod.yml --env-file .env.production build web
+echo "Starting containers..."
 "${COMPOSE[@]}" -f docker-compose.prod.yml --env-file .env.production up -d
 
 # Pick up nginx config / sitemap bind-mount changes without a full recreate when possible

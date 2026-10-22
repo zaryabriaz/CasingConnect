@@ -15,6 +15,9 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/package.json /app/package-lock.json ./
 COPY web ./web
 WORKDIR /app/web
+# Cap Node heap so Next build survives ~1GB hosts (with swap).
+ENV NODE_OPTIONS=--max-old-space-size=700
+ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 FROM node:20-bookworm-slim AS runner
