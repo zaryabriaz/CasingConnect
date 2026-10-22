@@ -118,10 +118,11 @@ model Business {
   updatedAt   DateTime           @updatedAt
   memberships Membership[]
   locations   Location[]
-  casingTypes       CasingType[]
-  qualities         Quality[]
-  units             Unit[]
-  partners          Partner[]
+  casingTypes         CasingType[]
+  qualities           Quality[]
+  units               Unit[]
+  materialCategories  MaterialCategory[]
+  partners            Partner[]
   sequences         Sequence[]
   batches           Batch[]
   receipts          MaterialReceipt[]
@@ -228,6 +229,28 @@ model Unit {
   @@index([businessId])
 }
 
+/// Buying / stock material category (Roda, 18/UP, Quality, or custom).
+model MaterialCategory {
+  id              String               @id @default(uuid()) @db.Uuid
+  businessId      String               @db.Uuid
+  code            String
+  name            String
+  sortOrder       Int                  @default(0)
+  active          Boolean              @default(true)
+  requiresQuality Boolean              @default(false)
+  /// Seeded RODA / EIGHTEEN_UP / QUALITY — cannot delete.
+  system          Boolean              @default(false)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  business        Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  batches         Batch[]
+  receipts        MaterialReceipt[]
+  stockLines      StockOperationLine[]
+
+  @@unique([businessId, code])
+  @@index([businessId, active])
+}
+
 model Partner {
   id           String          @id @default(uuid()) @db.Uuid
   businessId   String          @db.Uuid
@@ -299,57 +322,63 @@ model Sequence {
 }
 
 model Batch {
-  id           String           @id @default(uuid()) @db.Uuid
-  businessId   String           @db.Uuid
-  reference    String
-  casingTypeId String           @db.Uuid
-  qualityId    String?          @db.Uuid
-  materialForm IncomingMaterial
-  stage        String           @default("RAW")
-  ownership    Ownership
-  partnerId    String?          @db.Uuid
-  locationId   String?          @db.Uuid
-  quantity     Decimal          @db.Decimal(14, 3)
-  unitId       String           @db.Uuid
-  createdAt    DateTime         @default(now())
-  business     Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id                 String            @id @default(uuid()) @db.Uuid
+  businessId         String            @db.Uuid
+  reference          String
+  casingTypeId       String            @db.Uuid
+  qualityId          String?           @db.Uuid
+  materialForm       IncomingMaterial
+  materialCategoryId String            @db.Uuid
+  stage              String            @default("RAW")
+  ownership          Ownership
+  partnerId          String?           @db.Uuid
+  locationId         String?           @db.Uuid
+  quantity           Decimal           @db.Decimal(14, 3)
+  unitId             String            @db.Uuid
+  createdAt          DateTime          @default(now())
+  business           Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  materialCategory   MaterialCategory  @relation(fields: [materialCategoryId], references: [id], onDelete: Restrict)
 
   @@unique([businessId, reference])
   @@index([businessId])
+  @@index([materialCategoryId])
 }
 
 model MaterialReceipt {
-  id           String           @id @default(uuid()) @db.Uuid
-  businessId   String           @db.Uuid
-  reference    String
-  date         String
-  partnerId    String           @db.Uuid
-  materialForm IncomingMaterial
-  casingTypeId String           @db.Uuid
-  qualityId    String?          @db.Uuid
-  qualityText  String
-  quantity     Decimal          @db.Decimal(14, 3)
-  unitId       String           @db.Uuid
-  rate         Decimal?         @db.Decimal(14, 2)
-  currency     String
-  ownership    Ownership        @default(COMPANY)
-  locationId   String?          @db.Uuid
-  batchId      String           @db.Uuid
-  notes            String?
-  destination      Destination      @default(FACTORY)
-  paymentMode      PaymentMode      @default(CASH)
-  cashPaidTo       String?
-  creditInstrument CreditInstrument @default(NONE)
-  chequeNumber     String?
-  bankName         String?
-  instrumentNote   String?
-  createdAt        DateTime         @default(now())
-  business         Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  packages         MaterialPackage[]
+  id                 String            @id @default(uuid()) @db.Uuid
+  businessId         String            @db.Uuid
+  reference          String
+  date               String
+  partnerId          String            @db.Uuid
+  materialForm       IncomingMaterial
+  materialCategoryId String            @db.Uuid
+  casingTypeId       String            @db.Uuid
+  qualityId          String?           @db.Uuid
+  qualityText        String
+  quantity           Decimal           @db.Decimal(14, 3)
+  unitId             String            @db.Uuid
+  rate               Decimal?          @db.Decimal(14, 2)
+  currency           String
+  ownership          Ownership         @default(COMPANY)
+  locationId         String?           @db.Uuid
+  batchId            String            @db.Uuid
+  notes              String?
+  destination        Destination       @default(FACTORY)
+  paymentMode        PaymentMode       @default(CASH)
+  cashPaidTo         String?
+  creditInstrument   CreditInstrument  @default(NONE)
+  chequeNumber       String?
+  bankName           String?
+  instrumentNote     String?
+  createdAt          DateTime          @default(now())
+  business           Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  materialCategory   MaterialCategory  @relation(fields: [materialCategoryId], references: [id], onDelete: Restrict)
+  packages           MaterialPackage[]
 
   @@unique([businessId, reference])
   @@index([businessId, date])
   @@index([businessId, paymentMode])
+  @@index([materialCategoryId])
 }
 
 enum Destination {
@@ -420,17 +449,20 @@ model StockOperation {
 }
 
 model StockOperationLine {
-  id           String           @id @default(uuid()) @db.Uuid
-  operationId  String           @db.Uuid
-  membershipId String?          @db.Uuid
-  personName   String
-  materialForm IncomingMaterial
-  quantity     Decimal          @db.Decimal(14, 3)
-  operation    StockOperation   @relation(fields: [operationId], references: [id], onDelete: Cascade)
-  membership   Membership?      @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+  id                 String            @id @default(uuid()) @db.Uuid
+  operationId        String            @db.Uuid
+  membershipId       String?           @db.Uuid
+  personName         String
+  materialForm       IncomingMaterial
+  materialCategoryId String            @db.Uuid
+  quantity           Decimal           @db.Decimal(14, 3)
+  operation          StockOperation    @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  membership         Membership?       @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+  materialCategory   MaterialCategory  @relation(fields: [materialCategoryId], references: [id], onDelete: Restrict)
 
   @@index([operationId])
   @@index([membershipId])
+  @@index([materialCategoryId])
 }
 
 model StockOperationPackage {

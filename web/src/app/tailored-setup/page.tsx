@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { FormEvent, useCallback, useState } from 'react';
 import { AuthShell } from '@/components/auth-shell';
 import { CountrySelect, PhoneField } from '@/components/country-fields';
-import { captchaReady, FormCaptcha, HoneypotField } from '@/components/form-captcha';
+import { captchaReady, FormCaptcha, HONEYPOT_FIELD, HoneypotField } from '@/components/form-captcha';
 import { Banner, Field } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { countryByCode, formatInternationalPhone } from '@/lib/countries';
@@ -44,7 +44,7 @@ export default function TailoredSetupPage() {
           message: String(form.get('message') ?? '').trim(),
           captchaToken: captcha!.token,
           captchaAnswer: captcha!.answer,
-          website: String(form.get('website') ?? ''),
+          website: String(form.get(HONEYPOT_FIELD) ?? ''),
         }),
       });
       setSent(true);

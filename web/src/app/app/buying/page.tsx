@@ -6,9 +6,7 @@ import { Banner, Field } from '@/components/ui';
 import { useSession } from '@/components/session';
 import { api, errorText } from '@/lib/api';
 import { canBook } from '@/lib/labels';
-import { CasingType, PartnerPage } from '@/lib/types';
-
-type MaterialForm = 'RODA' | 'EIGHTEEN_UP' | 'QUALITY';
+import { CasingType, MaterialCategory, PartnerPage } from '@/lib/types';
 
 type PackageLine = {
   kind: 'BAG' | 'DRUM';
@@ -59,12 +57,6 @@ function paymentLabel(receipt: Receipt) {
   }
   return 'Credit · No instrument';
 }
-
-const MATERIALS: [MaterialForm, string][] = [
-  ['RODA', 'Roda'],
-  ['EIGHTEEN_UP', '18/UP'],
-  ['QUALITY', 'Quality'],
-];
 
 function formatTotal(value: number) {
   if (!value) return '';
@@ -136,7 +128,8 @@ export default function BuyingPage() {
   const [partners, setPartners] = useState<PartnerPage['items']>([]);
   const [casingTypes, setCasingTypes] = useState<CasingType[]>([]);
   const [casingTypeId, setCasingTypeId] = useState('');
-  const [material, setMaterial] = useState<MaterialForm>('RODA');
+  const [categories, setCategories] = useState<MaterialCategory[]>([]);
+  const [categoryId, setCategoryId] = useState('');
   const [destination, setDestination] = useState<'FACTORY' | 'STORE'>('FACTORY');
   const [groups, setGroups] = useState<PackGroup[]>([{ kind: 'BAG', count: '', each: '', firstNumber: '' }]);
   const [bought, setBought] = useState('');
@@ -182,19 +175,28 @@ export default function BuyingPage() {
       loadReceipts(),
       api<PartnerPage>('/partners?pageSize=100'),
       api<CasingType[]>('/casing-types'),
+      api<MaterialCategory[]>('/material-categories'),
     ])
-      .then(([, partnerPage, types]) => {
+      .then(([, partnerPage, types, materialCategories]) => {
         setPartners(partnerPage.items.filter((item) => item.active));
         const activeTypes = types.filter((item) => item.active);
         setCasingTypes(activeTypes);
         const preferred = activeTypes.find((item) => item.code === 'SHEEP') ?? activeTypes[0];
         setCasingTypeId(preferred?.id ?? '');
+        const activeCategories = materialCategories
+          .filter((item) => item.active)
+          .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+        setCategories(activeCategories);
+        const preferredCategory =
+          activeCategories.find((item) => item.code === 'RODA') ?? activeCategories[0];
+        setCategoryId(preferredCategory?.id ?? '');
       })
       .catch((caught) => setError(errorText(caught)));
   }, []);
 
   const selectedType = casingTypes.find((item) => item.id === casingTypeId);
   const qualities = (selectedType?.qualities ?? []).filter((item) => item.active);
+  const selectedCategory = categories.find((item) => item.id === categoryId);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -221,8 +223,8 @@ export default function BuyingPage() {
           date: form.get('date'),
           partnerId: form.get('partnerId'),
           casingTypeId: casingTypeId || undefined,
-          materialForm: material,
-          qualityId: material === 'QUALITY' ? form.get('qualityId') : undefined,
+          materialCategoryId: categoryId || undefined,
+          qualityId: selectedCategory?.requiresQuality ? form.get('qualityId') : undefined,
           quantity: bought,
           destination,
           packages: destination === 'STORE' ? storeLines : [],
@@ -246,7 +248,9 @@ export default function BuyingPage() {
         }),
       });
       formEl.reset();
-      setMaterial('RODA');
+      setCategoryId(
+        categories.find((item) => item.code === 'RODA')?.id ?? categories[0]?.id ?? '',
+      );
       setDestination('FACTORY');
       setPaymentMode('CASH');
       setCreditInstrument('NONE');
@@ -260,7 +264,7 @@ export default function BuyingPage() {
     }
   }
 
-  const ready = partners.length > 0 && casingTypes.length > 0;
+  const ready = partners.length > 0 && casingTypes.length > 0 && categories.length > 0;
   const suggestion = filledGroups(groups).length === 1 ? planBags(Number(bought), Number(filledGroups(groups)[0]?.each)) : null;
   const storePreview = expandGroups(groups, bought);
 
@@ -274,7 +278,7 @@ export default function BuyingPage() {
         <p className="tiny eyebrow">Buying</p>
         <h1>What was bought</h1>
         <p className="muted">
-          Choose the casing type (sheep, beef, or another active type), then record roda, 18/UP, or a quality.
+          Choose the casing type, then the material category (Roda, 18/UP, Quality, or any category from Catalogue).
           Send it to the factory, or to the store in bags and drums.
         </p>
       </div>
@@ -307,20 +311,20 @@ export default function BuyingPage() {
           </Field>
           <Field label="What was bought">
             <div className="checks">
-              {MATERIALS.map(([code, label]) => (
-                <label key={code}>
+              {categories.map((category) => (
+                <label key={category.id}>
                   <input
                     type="radio"
-                    name="materialForm"
-                    checked={material === code}
-                    onChange={() => setMaterial(code)}
+                    name="materialCategoryId"
+                    checked={categoryId === category.id}
+                    onChange={() => setCategoryId(category.id)}
                   />
-                  {label}
+                  {category.name}
                 </label>
               ))}
             </div>
           </Field>
-          {material === 'QUALITY' ? (
+          {selectedCategory?.requiresQuality ? (
             <Field label="Quality">
               <select name="qualityId" required defaultValue={qualities[0]?.id}>
                 {qualities.map((quality) => (

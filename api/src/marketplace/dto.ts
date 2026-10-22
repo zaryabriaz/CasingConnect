@@ -13,6 +13,80 @@ import {
   MinLength,
 } from 'class-validator';
 
+export class CreateMarketplaceListingRequestDto {
+  @ApiProperty({ description: 'Company name to show in the directory.' })
+  @IsString()
+  @MinLength(2)
+  @MaxLength(160)
+  companyName!: string;
+
+  @ApiProperty({ description: 'Contact person name.' })
+  @IsString()
+  @MinLength(2)
+  @MaxLength(120)
+  contactName!: string;
+
+  @ApiProperty()
+  @IsEmail()
+  @MaxLength(180)
+  email!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  phone?: string;
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  country!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  city?: string;
+
+  @ApiPropertyOptional({ description: 'Company website URL.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  companyWebsite?: string;
+
+  @ApiProperty({ description: 'Short description for the directory (products, casings, markets).' })
+  @IsString()
+  @MinLength(10)
+  @MaxLength(2000)
+  about!: string;
+
+  @ApiProperty({ description: 'Built-in captcha challenge token from GET /captcha/challenge.' })
+  @IsString()
+  @MinLength(10)
+  @MaxLength(4000)
+  captchaToken!: string;
+
+  @ApiProperty({ description: 'Answer to the captcha question.' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(20)
+  captchaAnswer!: string;
+
+  /** Honeypot — must be left empty. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  website?: string;
+}
+
+export class MarketplaceListingRequestResponseDto {
+  @ApiProperty({ format: 'uuid' }) id!: string;
+  @ApiProperty() companyName!: string;
+  @ApiProperty() message!: string;
+}
+
 export class MarketplaceBusinessQueryDto {
   @ApiPropertyOptional()
   @IsOptional()

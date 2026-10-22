@@ -36,9 +36,21 @@ export class IssuePersonLineDto {
   @IsUUID()
   membershipId!: string;
 
-  @ApiProperty({ enum: IncomingMaterial })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Preferred. Material category from Catalogue.',
+  })
+  @IsOptional()
+  @IsUUID()
+  materialCategoryId?: string;
+
+  @ApiPropertyOptional({
+    enum: IncomingMaterial,
+    description: 'Legacy fallback when materialCategoryId is omitted.',
+  })
+  @IsOptional()
   @IsEnum(IncomingMaterial)
-  materialForm!: IncomingMaterial;
+  materialForm?: IncomingMaterial;
 
   @ApiProperty({ example: '100' })
   @Matches(/^\d+(\.\d{1,3})?$/)

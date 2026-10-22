@@ -29,6 +29,14 @@ export class SetupRequestsService {
     const mapped = this.toDto(row);
     // Never fail the public form if email delivery has a problem.
     void this.mail.notifySetupRequest(mapped);
+    void this.mail.sendEnquiryAutoReply({
+      to: mapped.email,
+      name: mapped.name,
+      kind: 'tailored_setup',
+      detailLine: mapped.companyName
+        ? `Company noted: ${mapped.companyName}`
+        : undefined,
+    });
     return mapped;
   }
 

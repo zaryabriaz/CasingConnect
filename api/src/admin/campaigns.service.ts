@@ -5,7 +5,8 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MarketplaceProspectStatus } from '@prisma/client';
-import { escapeHtml, MailService } from '../mail/mail.service';
+import { brandedEmail, escapeHtml } from '../mail/email-layout';
+import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CAMPAIGN_TEMPLATES, type CampaignTemplateId } from './campaign-templates';
 import { SendCampaignDto } from './dto';
@@ -189,39 +190,92 @@ export class CampaignsService {
   private templateDefs(): TemplateBody[] {
     return [
       {
-        id: 'MARKETPLACE',
-        label: 'Marketplace invite',
-        description: 'Invite the company to list on the CasingConnect Marketplace.',
-        subject: 'List your casing company on CasingConnect Marketplace',
+        id: 'SOFTWARE',
+        label: 'Software for exporters',
+        description:
+          'Pitch CasingConnect software to casing companies abroad — features, industry expertise, and affordable tailored setup.',
+        subject: 'Casing business software for exporters — built by industry specialists',
         build: (companyName, siteUrl) => {
           const greeting = greetingFor(companyName);
           const text = [
             greeting,
             '',
-            'I’m writing from CasingConnect — B2B software and marketplace for the natural casing trade (sheep, hog, and beef casings).',
+            'I’m writing from CasingConnect — specialised business software for the natural casing industry (sheep, hog, and beef casings).',
             '',
-            'In Pakistan, 15+ companies already use CasingConnect to manage buying → stock → production → sales with private company books.',
+            'We already serve multiple casing exporters who run their day-to-day operations on CasingConnect: buying, store & factory stock, production (Roda / 18/UP / qualities), sales, expenses, and party ledgers — with an optional public company website and Marketplace presence.',
             '',
-            'We invite casing companies abroad to list on our Marketplace so buyers and sellers can find you:',
-            `${siteUrl}/marketplace`,
+            'Unlike generic ERP tools, CasingConnect is designed around casing workflows: material forms, hank-based finished stock, supplier & buyer ledgers, and export-ready books.',
             '',
-            'Register or reply to this email and we will help you get listed.',
+            'Our team works only in this industry. We can configure a private company system for your country, currency, and process — at competitive rates built for mid-size exporters, not enterprise software pricing.',
             '',
-            'Best regards,',
-            'CasingConnect',
+            `See the product: ${siteUrl}/`,
+            `Request a tailored setup: ${siteUrl}/tailored-setup`,
+            '',
+            'Reply with your country and a short note on how you buy and sell today, and we will outline a simple setup plan for your company.',
+            '',
+            'With regards,',
+            'The CasingConnect team',
             siteUrl,
             'info@casingconnect.com',
           ].join('\n');
 
           const html = outreachHtml({
+            title: 'Casing software built for exporters like you',
             greeting,
             paragraphs: [
-              'I’m writing from <strong>CasingConnect</strong> — B2B software and marketplace for the <strong>natural casing trade</strong> (sheep, hog, and beef casings).',
-              'In <strong>Pakistan, 15+ companies</strong> already use CasingConnect to manage buying → stock → production → sales with private company books.',
-              'We invite casing companies abroad to <strong>list on our Marketplace</strong> so buyers and sellers can find you.',
+              'I’m writing from <strong>CasingConnect</strong> — specialised business software for the <strong>natural casing industry</strong> (sheep, hog, and beef casings).',
+              'We already serve <strong>multiple casing exporters</strong> who run buying, store &amp; factory stock, production (Roda / 18/UP / qualities), sales, expenses, and party ledgers on CasingConnect — with an optional public company website and Marketplace presence.',
+              'Unlike generic ERP tools, CasingConnect follows <strong>casing workflows</strong>: material forms, hank-based finished stock, supplier &amp; buyer ledgers, and export-ready books.',
+              'Our team works only in this industry. We can configure a private system for your <strong>country, currency, and process</strong> — at <strong>competitive rates</strong> built for mid-size exporters, not enterprise software pricing.',
+            ],
+            ctaLabel: 'Request a tailored setup',
+            ctaUrl: `${siteUrl}/tailored-setup`,
+            secondaryLabel: 'See the product',
+            secondaryUrl: `${siteUrl}/`,
+            siteUrl,
+          });
+          return { text, html };
+        },
+      },
+      {
+        id: 'MARKETPLACE',
+        label: 'Marketplace invite',
+        description: 'Invite the company to list on the CasingConnect Marketplace.',
+        subject: 'Be found by casing buyers worldwide — CasingConnect Marketplace',
+        build: (companyName, siteUrl) => {
+          const greeting = greetingFor(companyName);
+          const text = [
+            greeting,
+            '',
+            'I’m writing from CasingConnect — the B2B platform purpose-built for the natural casing trade (sheep, hog, and beef casings).',
+            '',
+            'More than 15 companies in Pakistan already run their full buying → stock → production → sales cycle on CasingConnect with private company books.',
+            '',
+            'We are inviting established casing companies abroad to join our Marketplace directory — so international buyers and sellers can find verified partners by country, product, and capability.',
+            '',
+            `Explore the Marketplace: ${siteUrl}/marketplace`,
+            `List your company: ${siteUrl}/marketplace/list-company`,
+            '',
+            'Reply to this email with your company name and country, and we will help you get listed.',
+            '',
+            'With regards,',
+            'The CasingConnect team',
+            siteUrl,
+            'info@casingconnect.com',
+          ].join('\n');
+
+          const html = outreachHtml({
+            title: 'List your company where casing buyers look',
+            greeting,
+            paragraphs: [
+              'I’m writing from <strong>CasingConnect</strong> — the B2B platform purpose-built for the <strong>natural casing trade</strong> (sheep, hog, and beef casings).',
+              'More than <strong>15 companies in Pakistan</strong> already run buying → stock → production → sales on CasingConnect with private company books.',
+              'We invite established casing companies abroad to join our <strong>Marketplace directory</strong> — so buyers and sellers can find verified partners by country, product, and capability.',
             ],
             ctaLabel: 'Open Marketplace',
             ctaUrl: `${siteUrl}/marketplace`,
+            secondaryLabel: 'List your company',
+            secondaryUrl: `${siteUrl}/marketplace/list-company`,
             siteUrl,
           });
           return { text, html };
@@ -231,32 +285,33 @@ export class CampaignsService {
         id: 'TAILORED',
         label: 'Tailored system setup',
         description: 'Offer a custom company setup like the Pakistan product.',
-        subject: 'CasingConnect for your casing company — tailored setup',
+        subject: 'Private casing books for your country & currency — CasingConnect',
         build: (companyName, siteUrl) => {
           const greeting = greetingFor(companyName);
           const text = [
             greeting,
             '',
-            'CasingConnect is natural casing business software used by 15+ companies in Pakistan for the full buying-to-sell cycle (buying, store & factory stock, production, sales, expenses, and party ledgers).',
+            'CasingConnect is natural casing business software used by 15+ companies in Pakistan for the full buying-to-sell cycle: buying, store & factory stock, production, sales, expenses, and party ledgers — with an optional public company website.',
             '',
-            'We can set up the same system for your company — adapted for your country, currency, and workflow.',
+            'We can set up the same system for your company, adapted to your country, currency, and day-to-day workflow — at competitive rates for exporters.',
             '',
             `Request a tailored setup: ${siteUrl}/tailored-setup`,
-            `Product overview: ${siteUrl}/`,
+            `See the product: ${siteUrl}/`,
             '',
-            'Reply to this email with your country and preferred currency if you would like us to follow up.',
+            'Reply with your country and preferred currency and we will follow up personally.',
             '',
-            'Best regards,',
-            'CasingConnect',
+            'With regards,',
+            'The CasingConnect team',
             siteUrl,
             'info@casingconnect.com',
           ].join('\n');
 
           const html = outreachHtml({
+            title: 'A casing system built around your operation',
             greeting,
             paragraphs: [
-              '<strong>CasingConnect</strong> is natural casing business software used by <strong>15+ companies in Pakistan</strong> for the full buying-to-sell cycle (buying, store &amp; factory stock, production, sales, expenses, and party ledgers).',
-              'We can set up the same system for your company — adapted for your country, currency, and workflow.',
+              '<strong>CasingConnect</strong> is natural casing business software used by <strong>15+ companies in Pakistan</strong> for the full buying-to-sell cycle — buying, store &amp; factory stock, production, sales, expenses, and party ledgers — plus an optional public company website.',
+              'We can set up the same system for your firm, adapted to your <strong>country, currency, and workflow</strong> — at competitive rates for exporters.',
             ],
             ctaLabel: 'Request tailored setup',
             ctaUrl: `${siteUrl}/tailored-setup`,
@@ -269,7 +324,7 @@ export class CampaignsService {
         id: 'COMBINED',
         label: 'Marketplace + system',
         description: 'Invite to the marketplace and offer a tailored company system.',
-        subject: 'Invite: CasingConnect Marketplace & company software',
+        subject: 'Marketplace visibility + private casing software — CasingConnect',
         build: (companyName, siteUrl) => {
           const greeting = greetingFor(companyName);
           const text = [
@@ -279,24 +334,25 @@ export class CampaignsService {
             '',
             'In Pakistan, 15+ companies use CasingConnect for buying → stock → production → sales with private books.',
             '',
-            'For companies outside Pakistan we offer two things:',
-            `1) List your company on the Marketplace: ${siteUrl}/marketplace`,
-            `2) Get a tailored company system (currency & workflow): ${siteUrl}/tailored-setup`,
+            'For companies outside Pakistan we offer two clear next steps:',
+            `1) List your company on the Marketplace: ${siteUrl}/marketplace/list-company`,
+            `2) Request a tailored company system for your country & currency: ${siteUrl}/tailored-setup`,
             '',
-            'Reply with your company name and country and we will guide the next step.',
+            'Reply with your company name and country and we will guide the right path.',
             '',
-            'Best regards,',
-            'CasingConnect',
+            'With regards,',
+            'The CasingConnect team',
             siteUrl,
             'info@casingconnect.com',
           ].join('\n');
 
           const html = outreachHtml({
+            title: 'Two ways to work with CasingConnect',
             greeting,
             paragraphs: [
               'I’m reaching out from <strong>CasingConnect</strong> — B2B software and marketplace for the natural casing trade.',
               'In <strong>Pakistan, 15+ companies</strong> use CasingConnect for buying → stock → production → sales with private books.',
-              'For companies outside Pakistan we offer two things: list on the <strong>Marketplace</strong>, and/or get a <strong>tailored company system</strong> for your country and currency.',
+              'For companies abroad we offer two clear paths: <strong>Marketplace visibility</strong> for buyers and sellers, and/or a <strong>tailored company system</strong> for your country and currency.',
             ],
             ctaLabel: 'Browse Marketplace',
             ctaUrl: `${siteUrl}/marketplace`,
@@ -313,10 +369,11 @@ export class CampaignsService {
 
 function greetingFor(companyName: string) {
   const clean = companyName.trim() || 'there';
-  return `Hi ${clean} team,`;
+  return `Dear ${clean} team,`;
 }
 
 function outreachHtml(input: {
+  title: string;
   greeting: string;
   paragraphs: string[];
   ctaLabel: string;
@@ -328,24 +385,24 @@ function outreachHtml(input: {
   const paras = input.paragraphs
     .map((p) => `<p style="margin:0 0 14px">${p}</p>`)
     .join('');
-  const secondary = input.secondaryLabel && input.secondaryUrl
-    ? `<p style="margin:12px 0 0"><a href="${escapeHtml(input.secondaryUrl)}" style="color:#1f6b4a">${escapeHtml(input.secondaryLabel)}</a></p>`
-    : '';
+  const secondary =
+    input.secondaryLabel && input.secondaryUrl
+      ? `<p style="margin:14px 0 0"><a href="${escapeHtml(input.secondaryUrl)}" style="color:#145544;font-weight:700">${escapeHtml(input.secondaryLabel)} →</a></p>`
+      : '';
 
-  return `
-    <div style="font-family:Arial,Helvetica,sans-serif;line-height:1.55;color:#122821;max-width:560px">
+  return brandedEmail({
+    preheader: input.title,
+    eyebrow: 'CasingConnect',
+    title: input.title,
+    bodyHtml: `
       <p style="margin:0 0 14px">${escapeHtml(input.greeting)}</p>
       ${paras}
-      <p style="margin:20px 0">
-        <a href="${escapeHtml(input.ctaUrl)}" style="display:inline-block;background:#1f6b4a;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:700">${escapeHtml(input.ctaLabel)}</a>
-      </p>
       ${secondary}
-      <p style="margin:24px 0 0;color:#3a5248;font-size:13px">
-        CasingConnect · <a href="${escapeHtml(input.siteUrl)}" style="color:#1f6b4a">${escapeHtml(input.siteUrl)}</a><br/>
-        info@casingconnect.com
-      </p>
-    </div>
-  `;
+    `,
+    ctaLabel: input.ctaLabel,
+    ctaUrl: input.ctaUrl,
+    footerNote: 'You can reply directly to this email — it reaches the CasingConnect team.',
+  });
 }
 
 function sleep(ms: number) {

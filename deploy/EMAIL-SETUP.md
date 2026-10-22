@@ -1,45 +1,62 @@
-# Email tailored-setup requests to info@casingconnect.com
+# Email setup (From: info@casingconnect.com)
 
-When someone submits **Request a tailored setup**, the app:
-1. Saves it in Admin → Requests
-2. Emails the details to **info@casingconnect.com** (forwards to your Gmail)
+Keep **forwarding** `info@casingconnect.com` → your Gmail so you still *receive* mail.  
+Use a free sender (**Resend**) so outbound mail shows **From: info@casingconnect.com** (no Spaceship mailbox required).
 
-## Free setup with Gmail SMTP
+## Recommended free path: Resend
 
-You already forward `info@casingconnect.com` → `zaryabriaz@gmail.com`.  
-Use that Gmail account to **send** the notification emails.
+**Free plan:** 100 emails/day · 3,000/month — enough for setup alerts, listing confirmations, and small campaigns.
 
-### 1. Create a Gmail App Password
+### 1. Create a Resend account
 
-1. Google Account → **Security**
-2. Turn on **2-Step Verification** (required)
-3. **App passwords** → create one for “Mail”
-4. Copy the 16-character password
+1. Sign up at [https://resend.com/signup](https://resend.com/signup) (free)
+2. Open **Domains** → **Add Domain** → `casingconnect.com`
+3. Resend shows DNS records (DKIM / SPF). Add them in **Spaceship** → your domain → **DNS**
+4. Wait until the domain status is **Verified** (often ~15 minutes)
 
-### 2. Add to server `.env.production`
+### 2. Create an API key
+
+Resend → **API Keys** → Create → copy the key (`re_…`).
+
+### 3. Put these values in server `.env.production`
 
 ```bash
 MAIL_TO=info@casingconnect.com
-MAIL_FROM=zaryabriaz@gmail.com
-SMTP_HOST=smtp.gmail.com
+MAIL_FROM=info@casingconnect.com
+SMTP_HOST=smtp.resend.com
 SMTP_PORT=587
 SMTP_SECURE=false
-SMTP_USER=zaryabriaz@gmail.com
-SMTP_PASS=xxxx xxxx xxxx xxxx
+SMTP_USER=resend
+SMTP_PASS=re_xxxxxxxx   # your Resend API key
 ```
 
-(Use your real Gmail + App Password. Spaces in the app password are OK.)
+Same keys work in local `api/.env`.
 
-### 3. Redeploy API
+### 4. Restart / redeploy the API
 
 ```bash
 cd ~/casingconnect
 ./deploy/deploy.sh
 ```
 
-### 4. Test
+### 5. Test
 
-Submit a request on https://casingconnect.com/tailored-setup  
-You should get an email at `info@…` (in Gmail), and see the row in Admin → Requests.
+Submit https://casingconnect.com/tailored-setup  
+The customer confirmation should show **From: CasingConnect \<info@casingconnect.com\>**.  
+Admin alerts still go to `info@` (forwarded to Gmail).
 
-Reply-To is set to the visitor’s email so you can reply directly.
+---
+
+## Why not Gmail alone?
+
+Gmail SMTP logs in as your personal Gmail and **rewrites** From to `zaryabriaz@gmail.com` unless you own a real mailbox / Send-as for `info@`. With only forwarding (no mailbox), Resend + DNS is the free fix.
+
+## Optional: other free senders
+
+| Service | Free limit | Notes |
+|---------|------------|--------|
+| **Resend** | 100/day, 3k/month | Best fit for this app (SMTP above) |
+| Brevo | 300/day | Also free; different SMTP settings |
+| SendGrid | 100/day | Also free; more setup |
+
+Stick with Resend unless you already use another provider.

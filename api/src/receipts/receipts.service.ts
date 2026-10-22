@@ -1,15 +1,11 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { CreditInstrument, IncomingMaterial, PackageKind, PaymentMode, Prisma } from '@prisma/client';
 import { Actor, requireBusinessId } from '../common/actor';
+import { incomingFormFromCategoryCode } from '../catalog/material-category';
 import { isUniqueConflict } from '../common/prisma-errors';
+import { DEFAULT_MATERIAL_CATEGORIES } from '../industry/defaults';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReceiptDto } from './dto';
-
-const LABELS: Record<IncomingMaterial, string> = {
-  RODA: 'Roda',
-  EIGHTEEN_UP: '18/UP',
-  QUALITY: 'Quality',
-};
 
 function trimQuantity(value: Prisma.Decimal) {
   return value.toFixed(3).replace(/\.?0+$/, '') || '0';
@@ -76,16 +72,23 @@ export class ReceiptsService {
     const rate = new Prisma.Decimal(dto.rate);
     if (rate.lte(0)) throw new BadRequestException('Rate must be greater than zero.');
 
-    const [partner, unit, casingTypes, quality] = await Promise.all([
-      this.prisma.partner.findFirst({ where: { id: dto.partnerId, businessId: requireBusinessId(actor), active: true } }),
-      this.numberUnit(requireBusinessId(actor)),
+    const businessId = requireBusinessId(actor);
+    await this.ensureMaterialCategories(businessId);
+
+    const [partner, unit, casingTypes, quality, categories] = await Promise.all([
+      this.prisma.partner.findFirst({ where: { id: dto.partnerId, businessId, active: true } }),
+      this.numberUnit(businessId),
       this.prisma.casingType.findMany({
-        where: { businessId: requireBusinessId(actor), active: true },
+        where: { businessId, active: true },
         orderBy: { code: 'asc' },
       }),
       dto.qualityId
-        ? this.prisma.quality.findFirst({ where: { id: dto.qualityId, businessId: requireBusinessId(actor), active: true } })
+        ? this.prisma.quality.findFirst({ where: { id: dto.qualityId, businessId, active: true } })
         : Promise.resolve(null),
+      this.prisma.materialCategory.findMany({
+        where: { businessId, active: true },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      }),
     ]);
 
     if (!partner) throw new NotFoundException('Choose a supplier from this business.');
@@ -99,31 +102,50 @@ export class ReceiptsService {
     if (dto.casingTypeId && casingType.id !== dto.casingTypeId) {
       throw new BadRequestException('That casing type is not active in this business.');
     }
-    if (dto.materialForm === 'QUALITY' && !quality) {
+
+    const category =
+      (dto.materialCategoryId
+        ? categories.find((item) => item.id === dto.materialCategoryId)
+        : null) ??
+      (dto.materialForm
+        ? categories.find((item) => item.code === dto.materialForm)
+        : null) ??
+      categories.find((item) => item.code === 'RODA') ??
+      categories[0];
+    if (!category) {
+      throw new BadRequestException('No material category available. Add one in Catalogue.');
+    }
+    if (dto.materialCategoryId && category.id !== dto.materialCategoryId) {
+      throw new BadRequestException('That material category is not active in this business.');
+    }
+
+    const materialForm = incomingFormFromCategoryCode(category.code);
+    if (category.requiresQuality && !quality) {
       throw new BadRequestException('Choose the quality that was bought.');
     }
     if (quality && quality.casingTypeId !== casingType.id) {
       throw new BadRequestException('That quality belongs to a different casing type.');
     }
-    if (dto.materialForm !== 'QUALITY' && dto.qualityId) {
-      throw new BadRequestException('Roda and 18/UP are recorded as a number, not as a named quality.');
+    if (!category.requiresQuality && dto.qualityId) {
+      throw new BadRequestException('This category is recorded as a number, not as a named quality.');
     }
 
     const packages = this.checkedPackages(dto.destination, quantity, dto.packages ?? []);
     const payment = this.checkedPayment(dto);
 
-    const material = dto.materialForm === 'QUALITY' && quality ? quality.name : LABELS[dto.materialForm];
+    const material = category.requiresQuality && quality ? quality.name : category.name;
     const currency = partner.currency ?? 'PKR';
 
     const created = await this.prisma.$transaction(async (tx) => {
-      const reference = await this.nextReference(tx, requireBusinessId(actor));
+      const reference = await this.nextReference(tx, businessId);
       const batch = await tx.batch.create({
         data: {
-          businessId: requireBusinessId(actor),
+          businessId,
           reference,
           casingTypeId: casingType.id,
           qualityId: quality?.id,
-          materialForm: dto.materialForm,
+          materialForm,
+          materialCategoryId: category.id,
           stage: dto.destination === 'STORE' ? 'READY_FOR_STORAGE' : 'RAW',
           ownership: 'COMPANY',
           partnerId: partner.id,
@@ -133,11 +155,12 @@ export class ReceiptsService {
       });
       const receipt = await tx.materialReceipt.create({
         data: {
-          businessId: requireBusinessId(actor),
+          businessId,
           reference,
           date: dto.date,
           partnerId: partner.id,
-          materialForm: dto.materialForm,
+          materialForm,
+          materialCategoryId: category.id,
           casingTypeId: casingType.id,
           qualityId: quality?.id,
           qualityText: material,
@@ -157,7 +180,7 @@ export class ReceiptsService {
           instrumentNote: payment.instrumentNote,
           packages: {
             create: packages.map((item) => ({
-              businessId: requireBusinessId(actor),
+              businessId,
               kind: item.kind,
               packageNumber: item.packageNumber,
               quantity: item.quantity,
@@ -168,7 +191,7 @@ export class ReceiptsService {
       });
       await tx.inventoryMovement.create({
         data: {
-          businessId: requireBusinessId(actor),
+          businessId,
           date: dto.date,
           reason: 'RECEIPT',
           batchId: batch.id,
@@ -189,8 +212,17 @@ export class ReceiptsService {
       throw error;
     });
 
-    const [row] = await this.present(requireBusinessId(actor), [created]);
+    const [row] = await this.present(businessId, [created]);
     return row;
+  }
+
+  private async ensureMaterialCategories(businessId: string) {
+    const count = await this.prisma.materialCategory.count({ where: { businessId } });
+    if (count > 0) return;
+    await this.prisma.materialCategory.createMany({
+      data: DEFAULT_MATERIAL_CATEGORIES.map((row) => ({ businessId, ...row })),
+      skipDuplicates: true,
+    });
   }
 
   async setRate(actor: Actor, id: string, rateText: string) {
@@ -220,6 +252,7 @@ export class ReceiptsService {
       date: string;
       partnerId: string;
       materialForm: IncomingMaterial;
+      materialCategoryId: string;
       qualityText: string;
       quantity: Prisma.Decimal;
       unitId: string;
@@ -258,6 +291,7 @@ export class ReceiptsService {
         supplier: partnerName.get(receipt.partnerId) ?? 'Supplier',
         material: receipt.qualityText,
         materialForm: receipt.materialForm,
+        materialCategoryId: receipt.materialCategoryId,
         quantity: trimQuantity(receipt.quantity),
         unit: unitName.get(receipt.unitId) ?? '',
         rate: receipt.rate ? receipt.rate.toFixed(2) : null,

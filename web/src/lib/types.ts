@@ -223,6 +223,16 @@ export type Unit = {
   comparableGroup: string;
 };
 
+export type MaterialCategory = {
+  id: string;
+  code: string;
+  name: string;
+  sortOrder: number;
+  active: boolean;
+  requiresQuality: boolean;
+  system: boolean;
+};
+
 export type Partner = {
   id: string;
   name: string;

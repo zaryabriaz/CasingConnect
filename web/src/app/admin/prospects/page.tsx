@@ -24,7 +24,7 @@ type Prospect = {
 };
 
 type CampaignTemplate = {
-  id: 'MARKETPLACE' | 'TAILORED' | 'COMBINED';
+  id: 'SOFTWARE' | 'MARKETPLACE' | 'TAILORED' | 'COMBINED';
   label: string;
   description: string;
   subject: string;
@@ -73,10 +73,13 @@ export default function AdminProspectsPage() {
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [templates, setTemplates] = useState<CampaignTemplate[]>([]);
-  const [template, setTemplate] = useState<CampaignTemplate['id']>('COMBINED');
+  const [template, setTemplate] = useState<CampaignTemplate['id']>('SOFTWARE');
   const [skipAlreadySent, setSkipAlreadySent] = useState(true);
   const [previewSubject, setPreviewSubject] = useState('');
   const [previewText, setPreviewText] = useState('');
+  const [previewHtml, setPreviewHtml] = useState('');
+  const [previewMode, setPreviewMode] = useState<'html' | 'text'>('html');
+  const [previewCompany, setPreviewCompany] = useState('Sample Company');
 
   async function load(nextStatus = status) {
     setError(null);
@@ -99,28 +102,33 @@ export default function AdminProspectsPage() {
     }
   }
 
-  async function loadPreview(nextTemplate = template) {
+  async function loadPreview(
+    nextTemplate = template,
+    companyName = previewCompany,
+  ) {
+    const name = companyName.trim() || 'Sample Company';
     try {
-      const data = await api<{ subject: string; text: string }>(
-        `/admin/campaigns/preview?template=${encodeURIComponent(nextTemplate)}&companyName=${encodeURIComponent('Sample Company')}`,
+      const data = await api<{ subject: string; text: string; html: string }>(
+        `/admin/campaigns/preview?template=${encodeURIComponent(nextTemplate)}&companyName=${encodeURIComponent(name)}`,
       );
       setPreviewSubject(data.subject);
       setPreviewText(data.text);
+      setPreviewHtml(data.html);
     } catch {
       setPreviewSubject('');
       setPreviewText('');
+      setPreviewHtml('');
     }
   }
 
   useEffect(() => {
     void load();
     void loadTemplates();
-    void loadPreview();
   }, []);
 
   useEffect(() => {
-    void loadPreview(template);
-  }, [template]);
+    void loadPreview(template, previewCompany);
+  }, [template, previewCompany]);
 
   const newCount = useMemo(
     () => items.filter((item) => item.status === 'NEW').length,
@@ -138,6 +146,18 @@ export default function AdminProspectsPage() {
   );
 
   const smtpConfigured = templates[0]?.smtpConfigured ?? false;
+  const activeTemplate = templates.find((item) => item.id === template);
+  const previewToEmail =
+    selectedWithEmail
+      .map((id) => items.find((row) => row.id === id))
+      .find((row) => row?.email)?.email ?? 'prospect@example.com';
+
+  function applySelectedCompanyToPreview() {
+    const first = selectedWithEmail
+      .map((id) => items.find((row) => row.id === id))
+      .find(Boolean);
+    if (first?.name) setPreviewCompany(first.name);
+  }
 
   function toggleOne(id: string, on: boolean) {
     setSelected((prev) => ({ ...prev, [id]: on }));
@@ -364,7 +384,8 @@ export default function AdminProspectsPage() {
         <div>
           <h2>Email campaign</h2>
           <p>
-            Select companies with email below, choose a template, then send. Max 25 per batch.
+            Select companies with email below, choose a template, preview the message, then send.
+            Max 25 per batch.
             {!smtpConfigured ? (
               <>
                 {' '}
@@ -374,84 +395,165 @@ export default function AdminProspectsPage() {
             ) : null}
           </p>
         </div>
-        <div className="admin-campaign-controls">
-          <label className="admin-field">
-            <span>Template</span>
-            <select
-              value={template}
-              onChange={(event) => setTemplate(event.target.value as CampaignTemplate['id'])}
-            >
-              {(templates.length
-                ? templates
-                : [
-                    {
-                      id: 'COMBINED' as const,
-                      label: 'Marketplace + system',
-                      description: '',
-                      subject: '',
-                      smtpConfigured: false,
-                    },
-                    {
-                      id: 'MARKETPLACE' as const,
-                      label: 'Marketplace invite',
-                      description: '',
-                      subject: '',
-                      smtpConfigured: false,
-                    },
-                    {
-                      id: 'TAILORED' as const,
-                      label: 'Tailored system setup',
-                      description: '',
-                      subject: '',
-                      smtpConfigured: false,
-                    },
-                  ]
-              ).map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="admin-check">
-            <input
-              type="checkbox"
-              checked={skipAlreadySent}
-              onChange={(event) => setSkipAlreadySent(event.target.checked)}
-            />
-            <span>Skip already sent this template</span>
-          </label>
-          <div className="admin-campaign-actions">
-            <button
-              type="button"
-              className="admin-btn"
-              disabled={busy || withEmail.length === 0}
-              onClick={selectAllWithEmail}
-            >
-              Select with email (max 25)
-            </button>
-            <button type="button" className="admin-btn ghost" disabled={busy} onClick={clearSelection}>
-              Clear
-            </button>
-            <button
-              type="button"
-              className="admin-btn primary"
-              disabled={busy || !smtpConfigured || selectedWithEmail.length === 0}
-              onClick={() => void sendCampaign()}
-            >
-              {busy ? 'Sending…' : `Send to ${selectedWithEmail.length}`}
-            </button>
+
+        <div className="admin-campaign-layout">
+          <div className="admin-campaign-controls">
+            <label className="admin-field">
+              <span>Template</span>
+              <select
+                value={template}
+                onChange={(event) => setTemplate(event.target.value as CampaignTemplate['id'])}
+              >
+                {(templates.length
+                  ? templates
+                  : [
+                      {
+                        id: 'SOFTWARE' as const,
+                        label: 'Software for exporters',
+                        description: '',
+                        subject: '',
+                        smtpConfigured: false,
+                      },
+                      {
+                        id: 'COMBINED' as const,
+                        label: 'Marketplace + system',
+                        description: '',
+                        subject: '',
+                        smtpConfigured: false,
+                      },
+                      {
+                        id: 'MARKETPLACE' as const,
+                        label: 'Marketplace invite',
+                        description: '',
+                        subject: '',
+                        smtpConfigured: false,
+                      },
+                      {
+                        id: 'TAILORED' as const,
+                        label: 'Tailored system setup',
+                        description: '',
+                        subject: '',
+                        smtpConfigured: false,
+                      },
+                    ]
+                ).map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {activeTemplate?.description ? (
+              <p className="admin-campaign-desc">{activeTemplate.description}</p>
+            ) : null}
+            <label className="admin-field">
+              <span>Preview as company</span>
+              <div className="admin-campaign-company-row">
+                <input
+                  value={previewCompany}
+                  onChange={(event) => setPreviewCompany(event.target.value)}
+                  placeholder="Company name in greeting"
+                />
+                <button
+                  type="button"
+                  className="admin-btn ghost"
+                  disabled={selectedWithEmail.length === 0}
+                  onClick={applySelectedCompanyToPreview}
+                >
+                  Use selected
+                </button>
+              </div>
+            </label>
+            <label className="admin-check">
+              <input
+                type="checkbox"
+                checked={skipAlreadySent}
+                onChange={(event) => setSkipAlreadySent(event.target.checked)}
+              />
+              <span>Skip already sent this template</span>
+            </label>
+            <div className="admin-campaign-actions">
+              <button
+                type="button"
+                className="admin-btn"
+                disabled={busy || withEmail.length === 0}
+                onClick={selectAllWithEmail}
+              >
+                Select with email (max 25)
+              </button>
+              <button
+                type="button"
+                className="admin-btn ghost"
+                disabled={busy}
+                onClick={clearSelection}
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                className="admin-btn primary"
+                disabled={busy || !smtpConfigured || selectedWithEmail.length === 0}
+                onClick={() => void sendCampaign()}
+              >
+                {busy ? 'Sending…' : `Send to ${selectedWithEmail.length}`}
+              </button>
+            </div>
+          </div>
+
+          <div className="admin-mail-preview" aria-label="Email preview">
+            <div className="admin-mail-preview-head">
+              <strong>Inbox preview</strong>
+              <div className="admin-mail-preview-tabs" role="tablist">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={previewMode === 'html'}
+                  className={previewMode === 'html' ? 'is-active' : undefined}
+                  onClick={() => setPreviewMode('html')}
+                >
+                  HTML
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={previewMode === 'text'}
+                  className={previewMode === 'text' ? 'is-active' : undefined}
+                  onClick={() => setPreviewMode('text')}
+                >
+                  Plain text
+                </button>
+              </div>
+            </div>
+            <dl className="admin-mail-meta">
+              <div>
+                <dt>From</dt>
+                <dd>CasingConnect &lt;info@casingconnect.com&gt;</dd>
+              </div>
+              <div>
+                <dt>To</dt>
+                <dd>{previewToEmail}</dd>
+              </div>
+              <div>
+                <dt>Subject</dt>
+                <dd>{previewSubject || '—'}</dd>
+              </div>
+            </dl>
+            <div className="admin-mail-preview-body">
+              {previewMode === 'html' && previewHtml ? (
+                <iframe
+                  title="Campaign email HTML preview"
+                  className="admin-mail-frame"
+                  sandbox=""
+                  srcDoc={previewHtml}
+                />
+              ) : previewText ? (
+                <pre className="admin-mail-text">{previewText}</pre>
+              ) : (
+                <p className="admin-empty">Preview unavailable.</p>
+              )}
+            </div>
           </div>
         </div>
-        {previewSubject ? (
-          <details className="admin-campaign-preview">
-            <summary>Preview email</summary>
-            <p className="admin-campaign-subject">
-              <strong>Subject:</strong> {previewSubject}
-            </p>
-            <pre>{previewText}</pre>
-          </details>
-        ) : null}
       </section>
 
       <div className="admin-panel">
@@ -513,6 +615,7 @@ export default function AdminProspectsPage() {
                     <strong>{row.name}</strong>
                     <div className="muted">
                       {[row.city, row.country].filter(Boolean).join(', ') || '—'}
+                      {row.sourceLabel === 'Self-submitted' ? ' · Self-submitted' : null}
                     </div>
                     {row.snippet ? <div className="tiny">{row.snippet}</div> : null}
                   </td>

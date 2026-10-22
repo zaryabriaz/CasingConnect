@@ -52,3 +52,10 @@ export const DEFAULT_UNITS = [
   { code: 'BAG', name: 'Bags', comparableGroup: 'bags' },
   { code: 'DRUM', name: 'Drums', comparableGroup: 'drums' },
 ] as const;
+
+/** Buying / operations material categories. System rows are seeded per business. */
+export const DEFAULT_MATERIAL_CATEGORIES = [
+  { code: 'RODA', name: 'Roda', sortOrder: 1, requiresQuality: false, system: true },
+  { code: 'EIGHTEEN_UP', name: '18/UP', sortOrder: 2, requiresQuality: false, system: true },
+  { code: 'QUALITY', name: 'Quality', sortOrder: 3, requiresQuality: true, system: true },
+] as const;

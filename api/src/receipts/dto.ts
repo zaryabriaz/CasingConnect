@@ -47,11 +47,26 @@ export class CreateReceiptDto {
   @IsUUID()
   casingTypeId?: string;
 
-  @ApiProperty({ enum: IncomingMaterial, description: 'RODA, EIGHTEEN_UP for 18/UP, or QUALITY. The quantity is always a number.' })
-  @IsEnum(IncomingMaterial)
-  materialForm!: IncomingMaterial;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Preferred. Material category from Catalogue (Roda, 18/UP, Quality, or custom).',
+  })
+  @IsOptional()
+  @IsUUID()
+  materialCategoryId?: string;
 
-  @ApiPropertyOptional({ format: 'uuid', description: 'Required when materialForm is QUALITY. Must belong to the casing type.' })
+  @ApiPropertyOptional({
+    enum: IncomingMaterial,
+    description: 'Legacy fallback when materialCategoryId is omitted. RODA, EIGHTEEN_UP, or QUALITY.',
+  })
+  @IsOptional()
+  @IsEnum(IncomingMaterial)
+  materialForm?: IncomingMaterial;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Required when the category requires a quality (built-in Quality). Must belong to the casing type.',
+  })
   @IsOptional()
   @IsUUID()
   qualityId?: string;

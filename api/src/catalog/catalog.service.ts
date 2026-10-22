@@ -2,10 +2,20 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { Actor, requireBusinessId } from '../common/actor';
 import { isUniqueConflict } from '../common/prisma-errors';
 import { clean, hasAny } from '../common/text';
-import { QUALITY_GRADES } from '../industry/defaults';
+import { DEFAULT_MATERIAL_CATEGORIES, QUALITY_GRADES } from '../industry/defaults';
 import { syncCasingQualities } from '../industry/sync-casing-qualities';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateCasingTypeDto, CreateQualityDto, CreateUnitDto, UpdateCasingTypeDto, UpdateQualityDto, UpdateUnitDto } from './dto';
+import {
+  CreateCasingTypeDto,
+  CreateMaterialCategoryDto,
+  CreateQualityDto,
+  CreateUnitDto,
+  UpdateCasingTypeDto,
+  UpdateMaterialCategoryDto,
+  UpdateQualityDto,
+  UpdateUnitDto,
+} from './dto';
+import { presentMaterialCategory, slugMaterialCategoryCode } from './material-category';
 
 const DIAMETER_ONLY = /^(\d+\/\d+|\d+\/\+)$/i;
 const GRADED_QUALITY = /^(\d+\/\d+|\d+\/\+)\s+(AB|A|C)$/i;
@@ -205,6 +215,113 @@ export class CatalogService {
     });
   }
 
+  async listMaterialCategories(actor: Actor) {
+    await this.ensureMaterialCategories(requireBusinessId(actor));
+    const rows = await this.prisma.materialCategory.findMany({
+      where: { businessId: requireBusinessId(actor) },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    });
+    return rows.map(presentMaterialCategory);
+  }
+
+  async createMaterialCategory(actor: Actor, dto: CreateMaterialCategoryDto) {
+    const businessId = requireBusinessId(actor);
+    await this.ensureMaterialCategories(businessId);
+    const name = clean(dto.name);
+    let code = (dto.code?.trim() || slugMaterialCategoryCode(name)).toUpperCase();
+    if (['RODA', 'EIGHTEEN_UP', 'QUALITY'].includes(code)) {
+      throw new BadRequestException('That code is reserved for a built-in material category.');
+    }
+    const last = await this.prisma.materialCategory.findFirst({
+      where: { businessId },
+      orderBy: { sortOrder: 'desc' },
+    });
+    try {
+      const created = await this.prisma.materialCategory.create({
+        data: {
+          businessId,
+          code,
+          name,
+          sortOrder: (last?.sortOrder ?? 10) + 1,
+          requiresQuality: false,
+          system: false,
+          active: true,
+        },
+      });
+      return presentMaterialCategory(created);
+    } catch (error) {
+      if (isUniqueConflict(error)) {
+        // Retry once with a numeric suffix if the slug collided.
+        code = `${code.slice(0, 16)}_${Math.floor(Math.random() * 90 + 10)}`;
+        try {
+          const created = await this.prisma.materialCategory.create({
+            data: {
+              businessId,
+              code,
+              name,
+              sortOrder: (last?.sortOrder ?? 10) + 1,
+              requiresQuality: false,
+              system: false,
+              active: true,
+            },
+          });
+          return presentMaterialCategory(created);
+        } catch (retryError) {
+          if (isUniqueConflict(retryError)) {
+            throw new ConflictException('This business already has that material category.');
+          }
+          throw retryError;
+        }
+      }
+      throw error;
+    }
+  }
+
+  async updateMaterialCategory(actor: Actor, id: string, dto: UpdateMaterialCategoryDto) {
+    if (!hasAny(dto)) throw new BadRequestException('Provide a field to update.');
+    const businessId = requireBusinessId(actor);
+    const existing = await this.prisma.materialCategory.findFirst({ where: { id, businessId } });
+    if (!existing) throw new NotFoundException('That material category was not found.');
+    const updated = await this.prisma.materialCategory.update({
+      where: { id },
+      data: {
+        name: dto.name === undefined ? undefined : clean(dto.name),
+        sortOrder: dto.sortOrder,
+        active: dto.active,
+      },
+    });
+    return presentMaterialCategory(updated);
+  }
+
+  async deleteMaterialCategory(actor: Actor, id: string) {
+    const businessId = requireBusinessId(actor);
+    const existing = await this.prisma.materialCategory.findFirst({ where: { id, businessId } });
+    if (!existing) throw new NotFoundException('That material category was not found.');
+    if (existing.system) {
+      throw new BadRequestException('Built-in categories cannot be deleted. Turn them off instead.');
+    }
+    const [receiptCount, lineCount] = await Promise.all([
+      this.prisma.materialReceipt.count({ where: { materialCategoryId: id } }),
+      this.prisma.stockOperationLine.count({ where: { materialCategoryId: id } }),
+    ]);
+    if (receiptCount > 0 || lineCount > 0) {
+      throw new BadRequestException(
+        'This category is already used in buying or stock. Turn it off instead of deleting.',
+      );
+    }
+    await this.prisma.materialCategory.delete({ where: { id } });
+    return { id };
+  }
+
+  async ensureMaterialCategories(businessId: string) {
+    const count = await this.prisma.materialCategory.count({ where: { businessId } });
+    if (count > 0) return;
+    await this.prisma.materialCategory.createMany({
+      data: DEFAULT_MATERIAL_CATEGORIES.map((row) => ({ businessId, ...row })),
+      skipDuplicates: true,
+    });
+  }
+
   async createUnit(actor: Actor, dto: CreateUnitDto) {
     try {
       return await this.prisma.unit.create({
@@ -246,3 +363,5 @@ export class CatalogService {
     return casingType;
   }
 }
+
+export { incomingFormFromCategoryCode } from './material-category';

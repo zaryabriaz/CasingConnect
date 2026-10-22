@@ -13,15 +13,18 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { MemberRole } from '@prisma/client';
+import { CaptchaService } from '../captcha/captcha.service';
 import { Actor } from '../common/actor';
 import { ApiData, ApiDataArray } from '../common/api-docs';
 import { CurrentActor, Public, Roles } from '../common/decorators';
 import {
   CreateMarketplaceInquiryDto,
   CreateMarketplaceListingDto,
+  CreateMarketplaceListingRequestDto,
   MarketplaceBusinessQueryDto,
   MarketplaceInquiryResponseDto,
   MarketplaceListingQueryDto,
+  MarketplaceListingRequestResponseDto,
   MarketplaceListingResponseDto,
   PublicMarketplaceBusinessDto,
   PublicMarketplaceProfileDto,
@@ -34,7 +37,24 @@ import { MarketplaceService } from './marketplace.service';
 @ApiTags('marketplace')
 @Controller('marketplace')
 export class MarketplaceController {
-  constructor(private readonly marketplace: MarketplaceService) {}
+  constructor(
+    private readonly marketplace: MarketplaceService,
+    private readonly captcha: CaptchaService,
+  ) {}
+
+  @Public()
+  @Post('listing-requests')
+  @HttpCode(201)
+  @ApiOperation({
+    summary:
+      'Public form: request to list a natural casing company in the Marketplace directory.',
+  })
+  @ApiData(MarketplaceListingRequestResponseDto, 201)
+  createListingRequest(@Body() dto: CreateMarketplaceListingRequestDto) {
+    this.captcha.assertHoneypotEmpty(dto.website);
+    this.captcha.verify(dto.captchaToken, dto.captchaAnswer);
+    return this.marketplace.createListingRequest(dto);
+  }
 
   @Public()
   @Get('businesses')

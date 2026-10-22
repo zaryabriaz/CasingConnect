@@ -76,6 +76,9 @@ export function captchaReady(value: { token: string; answer: string } | null) {
   return Boolean(value?.token && value.answer.trim());
 }
 
+/** FormData / JSON key for the honeypot — must stay empty. Avoid "website"/"url" so browsers don't autofill. */
+export const HONEYPOT_FIELD = 'cc_hp_confirm';
+
 /** Hidden honeypot field — leave empty; bots often fill it. */
 export function HoneypotField() {
   return (
@@ -91,8 +94,14 @@ export function HoneypotField() {
       }}
     >
       <label>
-        Website
-        <input name="website" type="text" tabIndex={-1} autoComplete="off" />
+        Confirm field
+        <input
+          name={HONEYPOT_FIELD}
+          type="text"
+          tabIndex={-1}
+          autoComplete="off"
+          defaultValue=""
+        />
       </label>
     </div>
   );

@@ -8,11 +8,14 @@ import { CatalogService } from './catalog.service';
 import {
   CasingTypeResponseDto,
   CreateCasingTypeDto,
+  CreateMaterialCategoryDto,
   CreateQualityDto,
   CreateUnitDto,
+  MaterialCategoryResponseDto,
   QualityResponseDto,
   UnitResponseDto,
   UpdateCasingTypeDto,
+  UpdateMaterialCategoryDto,
   UpdateQualityDto,
   UpdateUnitDto,
 } from './dto';
@@ -99,5 +102,43 @@ export class CatalogController {
   @ApiData(UnitResponseDto)
   updateUnit(@CurrentActor() actor: Actor, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateUnitDto) {
     return this.catalog.updateUnit(actor, id, dto);
+  }
+
+  @Get('material-categories')
+  @ApiOperation({
+    summary: 'Buying material categories (Roda, 18/UP, Quality, plus any custom categories).',
+  })
+  @ApiDataArray(MaterialCategoryResponseDto)
+  listMaterialCategories(@CurrentActor() actor: Actor) {
+    return this.catalog.listMaterialCategories(actor);
+  }
+
+  @Post('material-categories')
+  @Roles(MemberRole.OWNER, MemberRole.MANAGER)
+  @ApiOperation({ summary: 'Add a custom material category for buying and stock.' })
+  @ApiData(MaterialCategoryResponseDto, 201)
+  createMaterialCategory(@CurrentActor() actor: Actor, @Body() dto: CreateMaterialCategoryDto) {
+    return this.catalog.createMaterialCategory(actor, dto);
+  }
+
+  @Patch('material-categories/:id')
+  @Roles(MemberRole.OWNER, MemberRole.MANAGER)
+  @ApiOperation({ summary: 'Rename, reorder, or enable/disable a material category.' })
+  @ApiData(MaterialCategoryResponseDto)
+  updateMaterialCategory(
+    @CurrentActor() actor: Actor,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateMaterialCategoryDto,
+  ) {
+    return this.catalog.updateMaterialCategory(actor, id, dto);
+  }
+
+  @Delete('material-categories/:id')
+  @Roles(MemberRole.OWNER, MemberRole.MANAGER)
+  @ApiOperation({
+    summary: 'Delete an unused custom category. Built-in categories can only be turned off.',
+  })
+  deleteMaterialCategory(@CurrentActor() actor: Actor, @Param('id', ParseUUIDPipe) id: string) {
+    return this.catalog.deleteMaterialCategory(actor, id);
   }
 }

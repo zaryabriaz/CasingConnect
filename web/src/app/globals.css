@@ -19,7 +19,28 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; }
+html, body {
+  margin: 0;
+  padding: 0;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+/* Homepage: hide scrollbars (page still scrolls) */
+html:has(.home) {
+  scrollbar-width: none;
+}
+html:has(.home)::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+body:has(.home) {
+  scrollbar-width: none;
+}
+body:has(.home)::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
 body {
   min-height: 100vh;
   color: var(--ink);

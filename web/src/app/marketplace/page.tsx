@@ -174,8 +174,8 @@ export default function MarketplacePage() {
               <button type="button" className="is-primary" onClick={scrollToDirectory}>
                 Browse companies
               </button>
-              <Link className="is-ghost" href="/register">
-                Join the trade
+              <Link className="is-ghost" href="/marketplace/list-company">
+                List your company
               </Link>
             </div>
           </div>
@@ -290,10 +290,15 @@ export default function MarketplacePage() {
               <p>
                 {businesses.length} companies
                 {!country ? ` · ${countryCount} countries` : ` · ${country}`}
+                {' · '}
+                <Link href="/marketplace/list-company">Can&apos;t find your firm? List it</Link>
               </p>
             </div>
             {businesses.length === 0 ? (
-              <p className="market-empty">No companies match these filters.</p>
+              <p className="market-empty">
+                No companies match these filters.{' '}
+                <Link href="/marketplace/list-company">List your company on the Marketplace</Link>
+              </p>
             ) : (
               grouped.map(([groupCountry, rows]) => (
                 <section key={groupCountry} className="market-group">

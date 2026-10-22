@@ -6,7 +6,7 @@ import { useSession } from '@/components/session';
 import { useToast } from '@/components/toast';
 import { api, errorText } from '@/lib/api';
 import { canManage } from '@/lib/labels';
-import { CasingType, Quality, Unit } from '@/lib/types';
+import { CasingType, MaterialCategory, Quality, Unit } from '@/lib/types';
 
 function diameterOf(name: string) {
   const match = name.trim().match(/^(\d+\/\d+|\d+\/\+)/);
@@ -38,6 +38,7 @@ export default function CataloguePage() {
   const toast = useToast();
   const [types, setTypes] = useState<CasingType[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
+  const [categories, setCategories] = useState<MaterialCategory[]>([]);
   const [error, setError] = useState<string | null>(null);
   const manage = canManage(session.role);
 
@@ -46,11 +47,24 @@ export default function CataloguePage() {
     [types],
   );
 
+  const orderedCategories = useMemo(
+    () =>
+      [...categories].sort(
+        (a, b) => Number(b.active) - Number(a.active) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),
+      ),
+    [categories],
+  );
+
   function load() {
-    return Promise.all([api<CasingType[]>('/casing-types'), api<Unit[]>('/units')])
-      .then(([nextTypes, nextUnits]) => {
+    return Promise.all([
+      api<CasingType[]>('/casing-types'),
+      api<Unit[]>('/units'),
+      api<MaterialCategory[]>('/material-categories'),
+    ])
+      .then(([nextTypes, nextUnits, nextCategories]) => {
         setTypes(nextTypes);
         setUnits(nextUnits);
+        setCategories(nextCategories);
       })
       .catch((caught) => setError(errorText(caught)));
   }
@@ -135,17 +149,157 @@ export default function CataloguePage() {
     }
   }
 
+  async function addCategory(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formEl = event.currentTarget;
+    const form = new FormData(formEl);
+    const name = String(form.get('name') ?? '').trim();
+    setError(null);
+    try {
+      await api('/material-categories', {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      });
+      formEl.reset();
+      await load();
+      toast.ok(`Added material category ${name}`);
+    } catch (caught) {
+      const message = errorText(caught);
+      setError(message);
+      toast.bad(message);
+    }
+  }
+
+  async function toggleCategory(id: string, active: boolean) {
+    setError(null);
+    try {
+      await api(`/material-categories/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ active }),
+      });
+      await load();
+      toast.ok(active ? 'Category turned on' : 'Category turned off');
+    } catch (caught) {
+      const message = errorText(caught);
+      setError(message);
+      toast.bad(message);
+    }
+  }
+
+  async function renameCategory(id: string, name: string) {
+    const next = name.trim();
+    if (!next) return;
+    setError(null);
+    try {
+      await api(`/material-categories/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name: next }),
+      });
+      await load();
+      toast.ok('Category renamed');
+    } catch (caught) {
+      const message = errorText(caught);
+      setError(message);
+      toast.bad(message);
+    }
+  }
+
+  async function removeCategory(id: string, name: string) {
+    setError(null);
+    try {
+      await api(`/material-categories/${id}`, { method: 'DELETE' });
+      await load();
+      toast.ok(`Deleted ${name}`);
+    } catch (caught) {
+      const message = errorText(caught);
+      setError(message);
+      toast.bad(message);
+    }
+  }
+
   return (
     <div className="stack">
       <div>
         <p className="tiny eyebrow">Catalogue</p>
         <h1>Casings, qualities, and units</h1>
         <p className="muted">
-          Each casing type has diameter + grade qualities (AB, A, C). Enable a type when you trade it. Units are shared
-          across types — hanks are for finished output.
+          Each casing type has diameter + grade qualities (AB, A, C). Material categories power Buying (Roda, 18/UP,
+          Quality, or your own). Units are shared — hanks are for finished output.
         </p>
       </div>
       {error ? <Banner kind="bad">{error}</Banner> : null}
+
+      <section className="card pad stack">
+        <div>
+          <h2>Material categories</h2>
+          <p className="muted tiny">
+            Shown on Buying as what was bought. Built-in Roda, 18/UP, and Quality keep production rules; add custom
+            categories for other intake forms.
+          </p>
+        </div>
+        {orderedCategories.length === 0 ? (
+          <p className="muted">No categories yet.</p>
+        ) : (
+          <div className="unit-rows">
+            {orderedCategories.map((category) => (
+              <div className="unit-row" key={category.id}>
+                <div>
+                  <strong>{category.name}</strong>
+                  <div className="tiny">
+                    {category.code}
+                    {category.system ? ' · built-in' : ' · custom'}
+                    {category.requiresQuality ? ' · needs quality' : ''}
+                    {!category.active ? ' · off' : ''}
+                  </div>
+                </div>
+                {manage ? (
+                  <div className="inline" style={{ gap: '0.45rem', flexWrap: 'wrap' }}>
+                    <input
+                      defaultValue={category.name}
+                      aria-label={`Rename ${category.name}`}
+                      onBlur={(event) => {
+                        if (event.target.value.trim() !== category.name) {
+                          void renameCategory(category.id, event.target.value);
+                        }
+                      }}
+                    />
+                    <button
+                      className="btn ghost"
+                      type="button"
+                      onClick={() => void toggleCategory(category.id, !category.active)}
+                    >
+                      {category.active ? 'Off' : 'On'}
+                    </button>
+                    {!category.system ? (
+                      <button
+                        className="btn ghost"
+                        type="button"
+                        onClick={() => void removeCategory(category.id, category.name)}
+                      >
+                        Delete
+                      </button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <span className={`status-pill${category.active ? ' on' : ''}`}>
+                    {category.active ? 'Active' : 'Inactive'}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {manage ? (
+          <form className="catalogue-add" onSubmit={(event) => void addCategory(event)}>
+            <Field label="New material category">
+              <input name="name" placeholder="e.g. Salted, Green" required />
+            </Field>
+            <button className="btn primary" type="submit">
+              Add
+            </button>
+          </form>
+        ) : null}
+      </section>
 
       {orderedTypes.map((type) => {
         const bands = groupQualities(type.qualities);

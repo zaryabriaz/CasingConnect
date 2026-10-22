@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { IncomingMaterial, PackageStatus, Prisma, StockOpType } from '@prisma/client';
 import { Actor, requireBusinessId } from '../common/actor';
+import { incomingFormFromCategoryCode } from '../catalog/material-category';
+import { DEFAULT_MATERIAL_CATEGORIES } from '../industry/defaults';
 import { PrismaService } from '../prisma/prisma.service';
 import { IssueToPersonDto, TransferToFactoryDto } from './dto';
 
@@ -533,19 +535,36 @@ export class StockService {
       throw new BadRequestException('Choose people with the Worker role under Users.');
     }
     const workerName = new Map(workers.map((member) => [member.id, member.user.name]));
+    const businessId = requireBusinessId(actor);
+    await this.ensureMaterialCategories(businessId);
+    const categories = await this.prisma.materialCategory.findMany({
+      where: { businessId, active: true },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    });
 
     const lines = dto.lines.map((line) => {
       const quantity = new Prisma.Decimal(line.quantity);
       if (quantity.lte(0)) throw new BadRequestException('Each issue quantity must be greater than zero.');
+      const category =
+        (line.materialCategoryId
+          ? categories.find((item) => item.id === line.materialCategoryId)
+          : null) ??
+        (line.materialForm
+          ? categories.find((item) => item.code === line.materialForm)
+          : null);
+      if (!category) {
+        throw new BadRequestException('Choose a material category for each issue line.');
+      }
       return {
         membershipId: line.membershipId,
         personName: workerName.get(line.membershipId)!,
-        materialForm: line.materialForm,
+        materialForm: incomingFormFromCategoryCode(category.code),
+        materialCategoryId: category.id,
+        materialLabel: category.name,
         quantity,
       };
     });
 
-    const businessId = requireBusinessId(actor);
     const packageIds = [...new Set(dto.packageIds ?? [])];
     const needed = new Map<IncomingMaterial, Prisma.Decimal>();
     for (const line of lines) {
@@ -593,8 +612,11 @@ export class StockService {
         .reduce((sum, item) => sum.plus(item.takeQuantity), new Prisma.Decimal(0));
       const room = available.plus(storeCover);
       if (quantity.gt(room)) {
+        const label =
+          lines.find((line) => line.materialForm === materialForm)?.materialLabel ??
+          LABELS[materialForm];
         throw new BadRequestException(
-          `Not enough ${LABELS[materialForm]} available. Factory has ${qty(available)}${storeCover.gt(0) ? ` and selected store bags add ${qty(storeCover)}` : ''}, but issuing ${qty(quantity)}. Transfer from store first, or select store bags.`,
+          `Not enough ${label} available. Factory has ${qty(available)}${storeCover.gt(0) ? ` and selected store bags add ${qty(storeCover)}` : ''}, but issuing ${qty(quantity)}. Transfer from store first, or select store bags.`,
         );
       }
     }
@@ -616,6 +638,7 @@ export class StockService {
               membershipId: line.membershipId,
               personName: line.personName,
               materialForm: line.materialForm,
+              materialCategoryId: line.materialCategoryId,
               quantity: line.quantity,
             })),
           },
@@ -1049,5 +1072,14 @@ export class StockService {
       create: { businessId, key, value: 1 },
     });
     return `${prefix}-${String(current.value).padStart(4, '0')}`;
+  }
+
+  private async ensureMaterialCategories(businessId: string) {
+    const count = await this.prisma.materialCategory.count({ where: { businessId } });
+    if (count > 0) return;
+    await this.prisma.materialCategory.createMany({
+      data: DEFAULT_MATERIAL_CATEGORIES.map((row) => ({ businessId, ...row })),
+      skipDuplicates: true,
+    });
   }
 }

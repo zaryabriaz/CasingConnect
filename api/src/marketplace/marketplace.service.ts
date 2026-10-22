@@ -7,13 +7,16 @@ import {
 import { BusinessActivity, MarketplaceProspectStatus, MemberRole, Prisma } from '@prisma/client';
 import { Actor, requireBusinessId } from '../common/actor';
 import { emptyToNull } from '../common/text';
+import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateMarketplaceInquiryDto,
   CreateMarketplaceListingDto,
+  CreateMarketplaceListingRequestDto,
   MarketplaceBusinessQueryDto,
   MarketplaceInquiryResponseDto,
   MarketplaceListingQueryDto,
+  MarketplaceListingRequestResponseDto,
   MarketplaceListingResponseDto,
   PublicMarketplaceBusinessDto,
   PublicMarketplaceProfileDto,
@@ -24,6 +27,8 @@ import {
 
 const MANAGE_ROLES: MemberRole[] = [MemberRole.OWNER, MemberRole.MANAGER, MemberRole.SALES];
 const DIRECTORY_SLUG_PREFIX = 'dir-';
+const SELF_SUBMIT_SOURCE = 'https://casingconnect.com/marketplace/list-company';
+const SELF_SUBMIT_LABEL = 'Self-submitted';
 
 function trimHeadline(text: string | null | undefined, max = 140) {
   const clean = (text ?? '').replace(/\s+/g, ' ').trim();
@@ -34,7 +39,91 @@ function trimHeadline(text: string | null | undefined, max = 140) {
 
 @Injectable()
 export class MarketplaceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mail: MailService,
+  ) {}
+
+  async createListingRequest(
+    dto: CreateMarketplaceListingRequestDto,
+  ): Promise<MarketplaceListingRequestResponseDto> {
+    const companyName = dto.companyName.trim();
+    const contactName = dto.contactName.trim();
+    const email = dto.email.trim().toLowerCase();
+    const phone = dto.phone?.trim() || null;
+    const country = dto.country.trim();
+    const city = dto.city?.trim() || null;
+    const about = dto.about.trim();
+    let companyWebsite = dto.companyWebsite?.trim() || null;
+    if (companyWebsite && !/^https?:\/\//i.test(companyWebsite)) {
+      companyWebsite = `https://${companyWebsite}`;
+    }
+
+    const snippet = [
+      about,
+      contactName ? `Contact: ${contactName}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
+    const row = await this.prisma.marketplaceProspect.upsert({
+      where: {
+        name_sourceUrl: {
+          name: companyName,
+          sourceUrl: SELF_SUBMIT_SOURCE,
+        },
+      },
+      create: {
+        name: companyName,
+        country,
+        city,
+        website: companyWebsite,
+        email,
+        phone,
+        sourceUrl: SELF_SUBMIT_SOURCE,
+        sourceLabel: SELF_SUBMIT_LABEL,
+        snippet,
+        status: MarketplaceProspectStatus.NEW,
+        notes: `Submitted by ${contactName} via marketplace form.`,
+      },
+      update: {
+        country,
+        city,
+        website: companyWebsite,
+        email,
+        phone,
+        snippet,
+        status: MarketplaceProspectStatus.NEW,
+        notes: `Updated by ${contactName} via marketplace form.`,
+        sourceLabel: SELF_SUBMIT_LABEL,
+      },
+    });
+
+    void this.mail.notifyMarketplaceListingRequest({
+      id: row.id,
+      companyName,
+      contactName,
+      email,
+      phone,
+      country,
+      city,
+      companyWebsite,
+      about,
+    });
+    void this.mail.sendEnquiryAutoReply({
+      to: email,
+      name: contactName,
+      kind: 'marketplace_listing',
+      detailLine: `Company submitted: ${companyName}`,
+    });
+
+    return {
+      id: row.id,
+      companyName: row.name,
+      message:
+        'Thanks — your company is now listed in the Marketplace directory. Our team may follow up to verify details.',
+    };
+  }
 
   async listBusinesses(query: MarketplaceBusinessQueryDto): Promise<PublicMarketplaceBusinessDto[]> {
     const country = query.country?.trim() || undefined;
@@ -397,6 +486,13 @@ export class MarketplaceService {
         fromBusiness: { select: { id: true, name: true } },
         listing: { select: { id: true, qualityText: true } },
       },
+    });
+
+    void this.mail.sendEnquiryAutoReply({
+      to: contactEmail,
+      name: inquiry.fromUser.name,
+      kind: 'marketplace_inquiry',
+      detailLine: `Enquiry sent to: ${inquiry.toBusiness.name}`,
     });
 
     return this.toInquiry(inquiry, 'SENT');

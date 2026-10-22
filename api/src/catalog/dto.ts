@@ -137,3 +137,51 @@ export class UnitResponseDto {
   @ApiProperty() name!: string;
   @ApiProperty() comparableGroup!: string;
 }
+
+export class CreateMaterialCategoryDto {
+  @ApiProperty({ example: 'Salted green' })
+  @IsString()
+  @MinLength(2)
+  @MaxLength(40)
+  name!: string;
+
+  @ApiPropertyOptional({
+    example: 'SALTED',
+    description: 'Optional code. Generated from the name when omitted.',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(CODE)
+  code?: string;
+}
+
+export class UpdateMaterialCategoryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(40)
+  name?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1000)
+  sortOrder?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+}
+
+export class MaterialCategoryResponseDto {
+  @ApiProperty({ format: 'uuid' }) id!: string;
+  @ApiProperty() code!: string;
+  @ApiProperty() name!: string;
+  @ApiProperty() sortOrder!: number;
+  @ApiProperty() active!: boolean;
+  @ApiProperty() requiresQuality!: boolean;
+  @ApiProperty() system!: boolean;
+}

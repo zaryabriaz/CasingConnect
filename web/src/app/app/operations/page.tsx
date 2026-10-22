@@ -5,7 +5,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { Banner, Field } from '@/components/ui';
 import { useSession } from '@/components/session';
 import { api, errorText } from '@/lib/api';
-import { Member } from '@/lib/types';
+import { MaterialCategory, Member } from '@/lib/types';
 
 type StorePackage = {
   id: string;
@@ -14,7 +14,7 @@ type StorePackage = {
   quantity: string;
   batch: string;
   material: string;
-  materialForm: 'RODA' | 'EIGHTEEN_UP' | 'QUALITY';
+  materialForm: string;
   date: string;
 };
 
@@ -22,19 +22,13 @@ type WorkerOption = { id: string; name: string };
 
 type IssueLine = {
   membershipId: string;
-  materialForm: 'RODA' | 'EIGHTEEN_UP' | 'QUALITY';
+  materialCategoryId: string;
   quantity: string;
 };
 
 type FactorySnapshot = {
   balances: Array<{ material: string; materialForm: string; available: string }>;
 };
-
-const MATERIALS: Array<['RODA' | 'EIGHTEEN_UP' | 'QUALITY', string]> = [
-  ['RODA', 'Roda'],
-  ['EIGHTEEN_UP', '18/UP'],
-  ['QUALITY', 'Quality'],
-];
 
 function today() {
   return new Intl.DateTimeFormat('en-CA', {
@@ -45,14 +39,15 @@ function today() {
   }).format(new Date());
 }
 
-function blankIssue(membershipId = ''): IssueLine {
-  return { membershipId, materialForm: 'RODA', quantity: '' };
+function blankIssue(membershipId = '', materialCategoryId = ''): IssueLine {
+  return { membershipId, materialCategoryId, quantity: '' };
 }
 
 export default function OperationsPage() {
   const session = useSession();
   const [packages, setPackages] = useState<StorePackage[]>([]);
   const [workers, setWorkers] = useState<WorkerOption[]>([]);
+  const [categories, setCategories] = useState<MaterialCategory[]>([]);
   const [factory, setFactory] = useState<FactorySnapshot | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [transferDate, setTransferDate] = useState(today);
@@ -68,14 +63,21 @@ export default function OperationsPage() {
       api<StorePackage[]>('/stock/store-packages'),
       api<FactorySnapshot>('/stock/factory'),
       api<Member[]>('/members'),
-    ]).then(([storePackages, factoryData, members]) => {
+      api<MaterialCategory[]>('/material-categories'),
+    ]).then(([storePackages, factoryData, members, materialCategories]) => {
       const workerList = members
         .filter((member) => member.role === 'WORKER' && member.active)
         .map((member) => ({ id: member.id, name: member.name }))
         .sort((a, b) => a.name.localeCompare(b.name));
+      const activeCategories = materialCategories
+        .filter((item) => item.active)
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+      const defaultCategoryId =
+        activeCategories.find((item) => item.code === 'RODA')?.id ?? activeCategories[0]?.id ?? '';
       setPackages(storePackages);
       setFactory(factoryData);
       setWorkers(workerList);
+      setCategories(activeCategories);
       setSelected((current) => current.filter((id) => storePackages.some((item) => item.id === id)));
       setIssueLines((rows) =>
         rows.map((row) => ({
@@ -84,6 +86,11 @@ export default function OperationsPage() {
             row.membershipId && workerList.some((worker) => worker.id === row.membershipId)
               ? row.membershipId
               : workerList[0]?.id ?? '',
+          materialCategoryId:
+            row.materialCategoryId &&
+            activeCategories.some((category) => category.id === row.materialCategoryId)
+              ? row.materialCategoryId
+              : defaultCategoryId,
         })),
       );
     });
@@ -95,6 +102,8 @@ export default function OperationsPage() {
 
   const selectedRows = packages.filter((item) => selected.includes(item.id));
   const selectedTotal = selectedRows.reduce((sum, item) => sum + Number(item.quantity), 0);
+  const defaultCategoryId =
+    categories.find((item) => item.code === 'RODA')?.id ?? categories[0]?.id ?? '';
 
   function toggle(id: string) {
     setSelected((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
@@ -128,14 +137,14 @@ export default function OperationsPage() {
   async function onIssue(event: FormEvent) {
     event.preventDefault();
     const lines = issueLines
-      .filter((line) => line.membershipId && line.quantity.trim())
+      .filter((line) => line.membershipId && line.quantity.trim() && line.materialCategoryId)
       .map((line) => ({
         membershipId: line.membershipId,
-        materialForm: line.materialForm,
+        materialCategoryId: line.materialCategoryId,
         quantity: line.quantity.trim(),
       }));
     if (lines.length === 0) {
-      setError('Choose a worker and quantity on at least one line.');
+      setError('Choose a worker, material category, and quantity on at least one line.');
       return;
     }
     setPending(true);
@@ -146,7 +155,10 @@ export default function OperationsPage() {
         method: 'POST',
         body: JSON.stringify({ date: issueDate, lines, notes: notes || undefined }),
       });
-      setIssueLines([blankIssue(workers[0]?.id ?? ''), blankIssue(workers[0]?.id ?? '')]);
+      setIssueLines([
+        blankIssue(workers[0]?.id ?? '', defaultCategoryId),
+        blankIssue(workers[0]?.id ?? '', defaultCategoryId),
+      ]);
       setNotes('');
       setNote(`${result.reference}: material given to workers.`);
       await reload();
@@ -246,6 +258,10 @@ export default function OperationsPage() {
             <Banner kind="bad">
               No workers yet. Add them on <Link href="/app/users">Users</Link> with role Worker.
             </Banner>
+          ) : categories.length === 0 ? (
+            <Banner kind="bad">
+              No material categories. Add them on <Link href="/app/catalogue">Catalogue</Link>.
+            </Banner>
           ) : (
             <p className="muted">Example: give 100 to Ahmed and 100 to Amjad. The rest stays in factory stock.</p>
           )}
@@ -274,18 +290,19 @@ export default function OperationsPage() {
               </Field>
               <Field label="Material">
                 <select
-                  value={line.materialForm}
+                  value={line.materialCategoryId}
+                  disabled={categories.length === 0}
                   onChange={(event) =>
                     setIssueLines((rows) =>
                       rows.map((row, rowIndex) =>
-                        rowIndex === index ? { ...row, materialForm: event.target.value as IssueLine['materialForm'] } : row,
+                        rowIndex === index ? { ...row, materialCategoryId: event.target.value } : row,
                       ),
                     )
                   }
                 >
-                  {MATERIALS.map(([code, label]) => (
-                    <option key={code} value={code}>
-                      {label}
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
                     </option>
                   ))}
                 </select>
@@ -305,11 +322,17 @@ export default function OperationsPage() {
           <button
             className="btn ghost"
             type="button"
-            onClick={() => setIssueLines((rows) => [...rows, blankIssue(workers[0]?.id ?? '')])}
+            onClick={() =>
+              setIssueLines((rows) => [...rows, blankIssue(workers[0]?.id ?? '', defaultCategoryId)])
+            }
           >
             Add worker line
           </button>
-          <button className="btn primary" type="submit" disabled={pending || workers.length === 0}>
+          <button
+            className="btn primary"
+            type="submit"
+            disabled={pending || workers.length === 0 || categories.length === 0}
+          >
             {pending ? 'Saving…' : 'Give material'}
           </button>
         </form>

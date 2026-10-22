@@ -1,5 +1,10 @@
 import { Prisma } from '@prisma/client';
-import { CASING_TYPE_PRESETS, DEFAULT_UNITS, qualitiesForPreset } from '../industry/defaults';
+import {
+  CASING_TYPE_PRESETS,
+  DEFAULT_MATERIAL_CATEGORIES,
+  DEFAULT_UNITS,
+  qualitiesForPreset,
+} from '../industry/defaults';
 
 export async function provisionBusiness(tx: Prisma.TransactionClient, businessId: string) {
   for (const preset of CASING_TYPE_PRESETS) {
@@ -28,5 +33,9 @@ export async function provisionBusiness(tx: Prisma.TransactionClient, businessId
 
   await tx.unit.createMany({
     data: DEFAULT_UNITS.map((unit) => ({ businessId, ...unit })),
+  });
+
+  await tx.materialCategory.createMany({
+    data: DEFAULT_MATERIAL_CATEGORIES.map((row) => ({ businessId, ...row })),
   });
 }

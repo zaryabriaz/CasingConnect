@@ -14,14 +14,15 @@ export function MarketplaceShell({
     <div className={immersive ? 'market market-immersive' : 'market market-simple'}>
       <header className="market-bar">
         <Link href="/" aria-label="CasingConnect home" className={immersive ? 'market-logo' : undefined}>
-          <LogoLockup height={48} />
+          <LogoLockup height={48} className="market-bar-logo" />
         </Link>
         <div className="market-bar-meta">Natural casings trade</div>
-        <nav>
+        <nav className="market-bar-nav" aria-label="Marketplace">
           <Link href="/marketplace">Directory</Link>
           <Link href="/login">Member login</Link>
-          <Link className="market-cta" href="/register">
-            Join
+          <Link className="market-cta" href="/marketplace/list-company">
+            <span className="market-cta-full">List your company</span>
+            <span className="market-cta-short">List company</span>
           </Link>
         </nav>
       </header>
