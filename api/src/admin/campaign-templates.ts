@@ -1,4 +1,7 @@
 export const CAMPAIGN_TEMPLATES = [
+  'WELCOME',
+  'PUBLIC_SITE',
+  'CHAT',
   'INTERNATIONAL',
   'PAKISTAN',
   'MARKETPLACE',

@@ -203,6 +203,19 @@ export default function DashboardPage() {
             </div>
           </section>
 
+          <section className="card pad stack" style={{ gap: 8 }}>
+            <strong>Support chat · live now</strong>
+            <p className="muted" style={{ margin: 0 }}>
+              Talk to the CasingConnect team in-app. Global chat between companies in any country is
+              coming soon — a valuable feature we are building next.
+            </p>
+            <div>
+              <Link className="btn ghost" href="/app/support">
+                Open support chat
+              </Link>
+            </div>
+          </section>
+
           <section className="dash-activity">
             <div className="dash-activity-head">
               <h2>Recent</h2>

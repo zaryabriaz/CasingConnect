@@ -215,3 +215,12 @@ export function IconWebsite({ className }: IconProps) {
     </Svg>
   );
 }
+
+export function IconSupport({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M4 6h16v10H8l-4 3V6z" />
+      <path d="M8 10h8M8 13h5" />
+    </Svg>
+  );
+}

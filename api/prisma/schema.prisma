@@ -36,6 +36,16 @@ enum TailoredSetupRequestStatus {
   CLOSED
 }
 
+enum SupportThreadStatus {
+  OPEN
+  CLOSED
+}
+
+enum SupportMessageRole {
+  COMPANY
+  ADMIN
+}
+
 enum MemberRole {
   OWNER
   MANAGER
@@ -66,15 +76,17 @@ enum PartnerRole {
 }
 
 model User {
-  id           String                @id @default(uuid()) @db.Uuid
-  name         String
-  email        String                @unique
-  passwordHash String
-  isSuperAdmin Boolean               @default(false)
-  createdAt    DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
-  memberships  Membership[]
-  inquiriesSent MarketplaceInquiry[] @relation("InquiryFromUser")
+  id              String                @id @default(uuid()) @db.Uuid
+  name            String
+  email           String                @unique
+  passwordHash    String
+  isSuperAdmin    Boolean               @default(false)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  memberships     Membership[]
+  inquiriesSent     MarketplaceInquiry[]  @relation("InquiryFromUser")
+  outboundEmails    AdminOutboundEmail[]
+  supportMessages   SupportMessage[]
 }
 
 model Business {
@@ -114,6 +126,8 @@ model Business {
   publicSiteLogoUrl      String?
   /// Gallery image URLs under /uploads (max 12).
   publicSiteGallery      String[] @default([])
+  /// Full-page letterhead image for Export Documents PDFs (`/uploads/...`).
+  exportLetterheadUrl    String?
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
   memberships Membership[]
@@ -137,6 +151,8 @@ model Business {
   marketplaceListings  MarketplaceListing[]
   inquiriesReceived    MarketplaceInquiry[] @relation("InquiryToBusiness")
   inquiriesSent        MarketplaceInquiry[] @relation("InquiryFromBusiness")
+  exportDocuments      ExportDocument[]
+  supportThread        SupportThread?
 }
 
 model Membership {
@@ -154,10 +170,39 @@ model Membership {
   productionEntries   ProductionEntry[]
   materialConversions MaterialConversion[]
   expenses            DailyExpense[]
+  exportDocuments     ExportDocument[]
 
   @@unique([businessId, userId])
   @@index([userId])
   @@index([businessId, role, active])
+}
+
+enum ExportDocumentType {
+  COMMERCIAL_INVOICE
+  PACKING_LIST
+}
+
+/// Standalone export desk document (letterhead PDF), not linked to Sale.
+model ExportDocument {
+  id                    String             @id @default(uuid()) @db.Uuid
+  businessId            String             @db.Uuid
+  type                  ExportDocumentType
+  documentNumber        String
+  title                 String?
+  buyerName             String
+  buyerAddress          String?
+  documentDate          DateTime           @db.Date
+  /// Flexible form fields + line items for reprint fidelity.
+  payload               Json
+  pdfUrl                String
+  createdByMembershipId String?            @db.Uuid
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  business              Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  createdBy             Membership?        @relation(fields: [createdByMembershipId], references: [id], onDelete: SetNull)
+
+  @@index([businessId, createdAt])
+  @@index([businessId, type])
 }
 
 model Location {
@@ -730,4 +775,50 @@ model TailoredSetupRequest {
 
   @@index([status])
   @@index([createdAt])
+}
+
+/// One support conversation between a business and CasingConnect admin.
+model SupportThread {
+  id            String              @id @default(uuid()) @db.Uuid
+  businessId    String              @unique @db.Uuid
+  status        SupportThreadStatus @default(OPEN)
+  lastMessageAt DateTime            @default(now())
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  business      Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  messages      SupportMessage[]
+
+  @@index([status, lastMessageAt])
+  @@index([lastMessageAt])
+}
+
+model SupportMessage {
+  id         String             @id @default(uuid()) @db.Uuid
+  threadId   String             @db.Uuid
+  body       String
+  fromUserId String             @db.Uuid
+  fromRole   SupportMessageRole
+  createdAt  DateTime           @default(now())
+  thread     SupportThread      @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  fromUser   User               @relation(fields: [fromUserId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+  @@index([fromUserId])
+}
+
+/// Free-form outbound emails sent from Admin → Mailbox.
+model AdminOutboundEmail {
+  id              String   @id @default(uuid()) @db.Uuid
+  toEmails        String[]
+  subject         String
+  bodyText        String
+  sentCount       Int      @default(0)
+  failedCount     Int      @default(0)
+  results         Json
+  createdByUserId String?  @db.Uuid
+  createdAt       DateTime @default(now())
+  createdBy       User?    @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([createdByUserId])
 }

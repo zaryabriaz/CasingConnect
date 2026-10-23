@@ -7,6 +7,7 @@ import {
   escapeHtml,
   quoteBlock,
 } from './email-layout';
+import { buildWelcomeEmail } from './welcome-email';
 
 export type SetupRequestMailInput = {
   id: string;
@@ -274,6 +275,191 @@ export class MailService {
     }
   }
 
+  /** Alert admins when a company posts in support chat. */
+  async notifySupportMessage(input: {
+    businessName: string;
+    country: string | null;
+    fromName: string;
+    fromEmail: string;
+    message: string;
+    threadId: string;
+  }) {
+    if (!this.isConfigured()) {
+      return { sent: false as const, reason: 'smtp_not_configured' as const };
+    }
+
+    const to =
+      this.config.get<string>('MAIL_TO')?.trim() || 'info@casingconnect.com';
+    const from = this.fromAddress();
+    const site = this.siteUrl();
+    const subject = `Support chat · ${input.businessName}`;
+    const text = [
+      'New support chat message on CasingConnect.',
+      '',
+      `Company: ${input.businessName}`,
+      `Country: ${input.country ?? '—'}`,
+      `From: ${input.fromName} <${input.fromEmail}>`,
+      `Thread: ${input.threadId}`,
+      '',
+      'Message:',
+      input.message,
+      '',
+      `Reply in Admin → Support chat: ${site}/admin/support`,
+    ].join('\n');
+
+    const html = brandedEmail({
+      preheader: `Support message from ${input.businessName}`,
+      eyebrow: 'Internal alert',
+      title: 'New support chat message',
+      bodyHtml: `
+        <p style="margin:0 0 12px">A company wrote in the in-app support chat.</p>
+        ${detailTable([
+          ['Company', escapeHtml(input.businessName)],
+          ['Country', escapeHtml(input.country ?? '—')],
+          [
+            'From',
+            `${escapeHtml(input.fromName)} · <a href="mailto:${escapeHtml(input.fromEmail)}" style="color:#145544">${escapeHtml(input.fromEmail)}</a>`,
+          ],
+        ])}
+        <p style="margin:8px 0 0;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#6a7f75">Message</p>
+        ${quoteBlock(input.message)}
+      `,
+      ctaLabel: 'Open Support chat',
+      ctaUrl: `${site}/admin/support`,
+      footerNote: 'Also visible in Admin → Support chat.',
+    });
+
+    try {
+      await this.transporter().sendMail({
+        from: `CasingConnect <${from}>`,
+        to,
+        replyTo: input.fromEmail,
+        subject,
+        text,
+        html,
+      });
+      return { sent: true as const };
+    } catch (error) {
+      this.logger.error(
+        `Failed to email support chat alert for ${input.threadId}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      return { sent: false as const, reason: 'send_failed' as const };
+    }
+  }
+
+  /** Free-form admin mailbox send — wraps plain text in the branded shell. */
+  async sendCustomAdminMail(input: { to: string; subject: string; text: string }) {
+    if (!this.isConfigured()) {
+      return { sent: false as const, reason: 'smtp_not_configured' as const };
+    }
+
+    const to = input.to.trim().toLowerCase();
+    if (!to.includes('@')) {
+      return { sent: false as const, reason: 'invalid_email' as const };
+    }
+
+    const subject = input.subject.trim();
+    const text = input.text.trim();
+    if (!subject || !text) {
+      return { sent: false as const, reason: 'missing_fields' as const };
+    }
+
+    const from = this.fromAddress();
+    const replyTo =
+      this.config.get<string>('MAIL_TO')?.trim() || 'info@casingconnect.com';
+    const html = brandedEmail({
+      preheader: subject,
+      eyebrow: 'CasingConnect',
+      title: subject,
+      bodyHtml: plainTextToEmailHtml(text),
+      footerNote: 'You can reply directly to this email — it reaches the CasingConnect team.',
+    });
+
+    try {
+      await this.transporter().sendMail({
+        from: `CasingConnect <${from}>`,
+        to,
+        replyTo,
+        subject,
+        text,
+        html,
+      });
+      this.logger.log(`Admin mailbox email sent to ${to}`);
+      return { sent: true as const };
+    } catch (error) {
+      this.logger.error(
+        `Failed to send admin mailbox email to ${to}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      return { sent: false as const, reason: 'send_failed' as const };
+    }
+  }
+
+  /** Preview HTML for admin mailbox compose (no send). */
+  previewCustomAdminMail(subject: string, text: string) {
+    const cleanSubject = subject.trim() || 'Message from CasingConnect';
+    const cleanText = text.trim() || '(Your message will appear here.)';
+    return {
+      subject: cleanSubject,
+      text: cleanText,
+      html: brandedEmail({
+        preheader: cleanSubject,
+        eyebrow: 'CasingConnect',
+        title: cleanSubject,
+        bodyHtml: plainTextToEmailHtml(cleanText),
+        footerNote: 'You can reply directly to this email — it reaches the CasingConnect team.',
+      }),
+      smtpConfigured: this.isConfigured(),
+    };
+  }
+
+  /** Welcome email after a new company registers on CasingConnect. */
+  async sendSignupWelcome(input: {
+    to: string;
+    name: string;
+    businessName: string;
+  }) {
+    if (!this.isConfigured()) {
+      return { sent: false as const, reason: 'smtp_not_configured' as const };
+    }
+
+    const to = input.to.trim().toLowerCase();
+    if (!to.includes('@')) {
+      return { sent: false as const, reason: 'invalid_email' as const };
+    }
+
+    const from = this.fromAddress();
+    const replyTo =
+      this.config.get<string>('MAIL_TO')?.trim() || 'info@casingconnect.com';
+    const first = input.name.trim().split(/\s+/)[0] || input.name.trim() || 'there';
+    const company = input.businessName.trim() || 'your company';
+    const { subject, text, html } = buildWelcomeEmail({
+      greetingName: first,
+      companyName: company,
+      siteUrl: this.siteUrl(),
+    });
+
+    try {
+      await this.transporter().sendMail({
+        from: `CasingConnect <${from}>`,
+        to,
+        replyTo,
+        subject,
+        text,
+        html,
+      });
+      this.logger.log(`Signup welcome email sent to ${to}`);
+      return { sent: true as const };
+    } catch (error) {
+      this.logger.error(
+        `Failed to send signup welcome to ${to}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      return { sent: false as const, reason: 'send_failed' as const };
+    }
+  }
+
   /** Auto-reply to the person who submitted a public form / enquiry. */
   async sendEnquiryAutoReply(input: EnquiryAutoReplyInput) {
     if (!this.isConfigured()) {
@@ -312,6 +498,22 @@ export class MailService {
       return { sent: false as const, reason: 'send_failed' as const };
     }
   }
+}
+
+function plainTextToEmailHtml(text: string) {
+  const paragraphs = text
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+  if (paragraphs.length === 0) {
+    return '<p style="margin:0">(empty message)</p>';
+  }
+  return paragraphs
+    .map((block) => {
+      const lines = escapeHtml(block).replaceAll('\n', '<br/>');
+      return `<p style="margin:0 0 14px">${lines}</p>`;
+    })
+    .join('');
 }
 
 function autoReplyCopy(

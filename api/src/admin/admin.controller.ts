@@ -14,16 +14,19 @@ import { AdminService } from './admin.service';
 import {
   AdminBusinessDetailDto,
   AdminBusinessListItemDto,
+  AdminOutboundEmailDto,
   AdminUserListItemDto,
   DiscoverProspectsDto,
   ImpersonateDto,
   MarketplaceProspectDto,
   ScrapeProspectsDto,
   SendCampaignDto,
+  SendMailboxDto,
   UpdateAdminBusinessDto,
   UpdateProspectDto,
 } from './dto';
 import { CampaignsService, type CampaignTemplateId } from './campaigns.service';
+import { MailboxService } from './mailbox.service';
 import { ProspectsService } from './prospects.service';
 
 @ApiTags('admin')
@@ -35,6 +38,7 @@ export class AdminController {
     private readonly admin: AdminService,
     private readonly prospects: ProspectsService,
     private readonly campaigns: CampaignsService,
+    private readonly mailbox: MailboxService,
     private readonly setupRequests: SetupRequestsService,
   ) {}
 
@@ -138,8 +142,9 @@ export class AdminController {
   campaignPreview(
     @Query('template') template: CampaignTemplateId,
     @Query('companyName') companyName?: string,
+    @Query('demoUrl') demoUrl?: string,
   ) {
-    return this.campaigns.preview(template, companyName);
+    return this.campaigns.preview(template, companyName, demoUrl);
   }
 
   @Post('campaigns/send')
@@ -152,6 +157,27 @@ export class AdminController {
       ...dto,
       skipAlreadySent: dto.skipAlreadySent !== false,
     });
+  }
+
+  @Get('mailbox')
+  @ApiOperation({ summary: 'List recent free-form emails sent from Admin Mailbox.' })
+  @ApiDataArray(AdminOutboundEmailDto)
+  listMailbox() {
+    return this.mailbox.list();
+  }
+
+  @Post('mailbox/preview')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Preview branded HTML for a free-form mailbox message.' })
+  mailboxPreview(@Body() dto: { subject?: string; body?: string }) {
+    return this.mailbox.preview(dto.subject, dto.body);
+  }
+
+  @Post('mailbox/send')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Send a free-form email from Admin Mailbox (max 25 recipients).' })
+  sendMailbox(@CurrentActor() actor: Actor, @Body() dto: SendMailboxDto) {
+    return this.mailbox.send(actor.userId, dto);
   }
 
   @Get('setup-requests')

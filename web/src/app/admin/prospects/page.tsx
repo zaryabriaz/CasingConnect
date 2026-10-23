@@ -24,7 +24,15 @@ type Prospect = {
 };
 
 type CampaignTemplate = {
-  id: 'INTERNATIONAL' | 'PAKISTAN' | 'MARKETPLACE' | 'TAILORED' | 'COMBINED';
+  id:
+    | 'WELCOME'
+    | 'PUBLIC_SITE'
+    | 'CHAT'
+    | 'INTERNATIONAL'
+    | 'PAKISTAN'
+    | 'MARKETPLACE'
+    | 'TAILORED'
+    | 'COMBINED';
   label: string;
   description: string;
   subject: string;
@@ -93,6 +101,7 @@ export default function AdminProspectsPage() {
   const [previewHtml, setPreviewHtml] = useState('');
   const [previewMode, setPreviewMode] = useState<'html' | 'text'>('html');
   const [previewCompany, setPreviewCompany] = useState('Sample Company');
+  const [demoUrl, setDemoUrl] = useState('https://casingconnect.com/site/');
 
   async function load(nextStatus = status) {
     setError(null);
@@ -118,11 +127,17 @@ export default function AdminProspectsPage() {
   async function loadPreview(
     nextTemplate = template,
     companyName = previewCompany,
+    nextDemoUrl = demoUrl,
   ) {
     const name = companyName.trim() || 'Sample Company';
     try {
+      const params = new URLSearchParams({
+        template: nextTemplate,
+        companyName: name,
+      });
+      if (nextDemoUrl.trim()) params.set('demoUrl', nextDemoUrl.trim());
       const data = await api<{ subject: string; text: string; html: string }>(
-        `/admin/campaigns/preview?template=${encodeURIComponent(nextTemplate)}&companyName=${encodeURIComponent(name)}`,
+        `/admin/campaigns/preview?${params}`,
       );
       setPreviewSubject(data.subject);
       setPreviewText(data.text);
@@ -140,8 +155,8 @@ export default function AdminProspectsPage() {
   }, []);
 
   useEffect(() => {
-    void loadPreview(template, previewCompany);
-  }, [template, previewCompany]);
+    void loadPreview(template, previewCompany, demoUrl);
+  }, [template, previewCompany, demoUrl]);
 
   const newCount = useMemo(
     () => items.filter((item) => item.status === 'NEW').length,
@@ -287,6 +302,10 @@ export default function AdminProspectsPage() {
       selectedWithEmail.length ? `${selectedWithEmail.length} prospect(s)` : null,
       customEmails.length ? `${customEmails.length} custom email(s)` : null,
     ].filter(Boolean);
+    if (template === 'PUBLIC_SITE' && !demoUrl.trim()) {
+      setError('Paste a public company-site demo URL for this template.');
+      return;
+    }
     if (!confirm(`Send “${template}” campaign to ${parts.join(' + ')}?`)) {
       return;
     }
@@ -300,6 +319,7 @@ export default function AdminProspectsPage() {
           prospectIds: selectedWithEmail,
           customEmails,
           companyName: previewCompany.trim() || undefined,
+          demoUrl: demoUrl.trim() || undefined,
           template,
           skipAlreadySent,
         }),
@@ -432,6 +452,27 @@ export default function AdminProspectsPage() {
                   ? templates
                   : [
                       {
+                        id: 'WELCOME' as const,
+                        label: 'Welcome / thank you (signup)',
+                        description: '',
+                        subject: '',
+                        smtpConfigured: false,
+                      },
+                      {
+                        id: 'PUBLIC_SITE' as const,
+                        label: 'Public company site demo',
+                        description: '',
+                        subject: '',
+                        smtpConfigured: false,
+                      },
+                      {
+                        id: 'CHAT' as const,
+                        label: 'Support chat + global chat (coming soon)',
+                        description: '',
+                        subject: '',
+                        smtpConfigured: false,
+                      },
+                      {
                         id: 'INTERNATIONAL' as const,
                         label: 'International clients',
                         description: '',
@@ -508,6 +549,19 @@ export default function AdminProspectsPage() {
                 </button>
               </div>
             </label>
+            {template === 'PUBLIC_SITE' ? (
+              <label className="admin-field">
+                <span>Demo site URL</span>
+                <input
+                  value={demoUrl}
+                  onChange={(event) => setDemoUrl(event.target.value)}
+                  placeholder="https://casingconnect.com/site/your-company"
+                />
+                <span className="admin-campaign-desc">
+                  Paste the public company site customers can open freely for demo (required).
+                </span>
+              </label>
+            ) : null}
             <label className="admin-check">
               <input
                 type="checkbox"

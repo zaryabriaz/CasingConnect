@@ -12,6 +12,7 @@ import { ResponseInterceptor } from './common/response.interceptor';
 import { AppValidationPipe } from './common/validation.pipe';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { ExpensesModule } from './expenses/expenses.module';
+import { ExportsModule } from './exports/exports.module';
 import { FinanceModule } from './finance/finance.module';
 import { HealthController } from './health.controller';
 import { LedgerModule } from './ledger/ledger.module';
@@ -24,6 +25,7 @@ import { SalesModule } from './sales/sales.module';
 import { PublicSiteModule } from './public-site/public-site.module';
 import { SetupRequestsModule } from './setup-requests/setup-requests.module';
 import { StockModule } from './stock/stock.module';
+import { SupportModule } from './support/support.module';
 
 @Module({
   imports: [
@@ -39,6 +41,7 @@ import { StockModule } from './stock/stock.module';
     ReceiptsModule,
     SalesModule,
     ExpensesModule,
+    ExportsModule,
     LedgerModule,
     FinanceModule,
     DashboardModule,
@@ -47,6 +50,7 @@ import { StockModule } from './stock/stock.module';
     MarketplaceModule,
     SetupRequestsModule,
     PublicSiteModule,
+    SupportModule,
   ],
   controllers: [HealthController],
   providers: [

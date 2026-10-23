@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { MarketplaceProspectStatus } from '@prisma/client';
 import { brandedEmail, escapeHtml } from '../mail/email-layout';
 import { MailService } from '../mail/mail.service';
+import { buildWelcomeEmail } from '../mail/welcome-email';
 import { PrismaService } from '../prisma/prisma.service';
 import { CAMPAIGN_TEMPLATES, type CampaignTemplateId } from './campaign-templates';
 import { SendCampaignDto } from './dto';
@@ -16,12 +17,20 @@ export { CAMPAIGN_TEMPLATES, type CampaignTemplateId } from './campaign-template
 const MAX_BATCH = 25;
 const SEND_GAP_MS = 450;
 
+type TemplateExtras = {
+  demoUrl?: string;
+};
+
 type TemplateBody = {
   id: CampaignTemplateId;
   label: string;
   description: string;
   subject: string;
-  build: (companyName: string, siteUrl: string) => { text: string; html: string };
+  build: (
+    companyName: string,
+    siteUrl: string,
+    extras?: TemplateExtras,
+  ) => { text: string; html: string };
 };
 
 @Injectable()
@@ -50,11 +59,17 @@ export class CampaignsService {
     }));
   }
 
-  preview(template: CampaignTemplateId, companyName = 'Your Company') {
+  preview(
+    template: CampaignTemplateId,
+    companyName = 'Your Company',
+    demoUrl?: string,
+  ) {
     const def = this.templateDefs().find((item) => item.id === template);
     if (!def) throw new BadRequestException('Unknown campaign template.');
     const siteUrl = this.siteUrl();
-    const body = def.build(companyName, siteUrl);
+    const body = def.build(companyName, siteUrl, {
+      demoUrl: normalizeDemoUrl(demoUrl, siteUrl),
+    });
     return {
       template,
       subject: def.subject,
@@ -95,6 +110,14 @@ export class CampaignsService {
     const def = this.templateDefs().find((item) => item.id === template)!;
     const siteUrl = this.siteUrl();
     const customCompanyName = dto.companyName?.trim() || 'there';
+    const extras: TemplateExtras = {
+      demoUrl: normalizeDemoUrl(dto.demoUrl, siteUrl),
+    };
+    if (template === 'PUBLIC_SITE' && !extras.demoUrl) {
+      throw new BadRequestException(
+        'Paste a public company-site demo URL for the Public site demo template.',
+      );
+    }
     const results: Array<{
       prospectId: string;
       name: string;
@@ -149,7 +172,7 @@ export class CampaignsService {
           continue;
         }
 
-        const body = def.build(prospect.name, siteUrl);
+        const body = def.build(prospect.name, siteUrl, extras);
         const sent = await this.mail.sendOutreach({
           to: email,
           subject: def.subject,
@@ -193,7 +216,7 @@ export class CampaignsService {
     }
 
     for (const email of customEmails) {
-      const body = def.build(customCompanyName, siteUrl);
+      const body = def.build(customCompanyName, siteUrl, extras);
       const sent = await this.mail.sendOutreach({
         to: email,
         subject: def.subject,
@@ -224,6 +247,142 @@ export class CampaignsService {
 
   private templateDefs(): TemplateBody[] {
     return [
+      {
+        id: 'WELCOME',
+        label: 'Welcome / thank you (signup)',
+        description:
+          'Thank them for joining and offer a tailored solution like the Pakistani market software at lowest rates. Same copy as the automatic signup email.',
+        subject: 'Welcome to CasingConnect',
+        build: (companyName, siteUrl) => {
+          const clean = companyName.trim() || 'there';
+          return buildWelcomeEmail({
+            greetingName: `${clean} team`,
+            companyName: clean === 'there' ? undefined : clean,
+            siteUrl,
+          });
+        },
+      },
+      {
+        id: 'PUBLIC_SITE',
+        label: 'Public company site demo',
+        description:
+          'Highlight the customer-facing company website included with CasingConnect. Paste a live demo URL so they can open it freely. Demo is free; customised setup later costs very little.',
+        subject: 'See a live company website demo — included with CasingConnect',
+        build: (companyName, siteUrl, extras) => {
+          const greeting = greetingFor(companyName);
+          const demoUrl =
+            extras?.demoUrl?.trim() || `${siteUrl}/site/your-demo`;
+          const features = [
+            'A customer-facing company website for your casing business',
+            'Shows who you are, what you offer, and how buyers can reach you',
+            'Included with the CasingConnect solution — not a separate product',
+            'Fully customisable to your brand, products, markets, and language',
+          ];
+          const text = [
+            greeting,
+            '',
+            'One part of CasingConnect that customers really like is the public company website — a customer-facing site for your casing business, built into our solution.',
+            '',
+            'You can open a live demo freely and browse it like a visitor would:',
+            demoUrl,
+            '',
+            'What you get:',
+            ...features.map((item, i) => `${i + 1}. ${item}`),
+            '',
+            'The demo is free to explore. If you later want a site customised for your company with us, the cost is very little compared with building one from scratch — and it sits alongside your private books and Marketplace presence.',
+            '',
+            'Also in progress: chat with our team in-app today, and soon global company chat so firms in any country can talk to each other inside CasingConnect.',
+            '',
+            `Explore CasingConnect: ${siteUrl}/`,
+            `Request a tailored setup: ${siteUrl}/tailored-setup`,
+            '',
+            'Reply if you would like your own demo link or a short walkthrough.',
+            '',
+            'With regards,',
+            'The CasingConnect team',
+            siteUrl,
+            'info@casingconnect.com',
+          ].join('\n');
+
+          const html = outreachHtml({
+            title: 'A customer-facing company site — included with our solution',
+            greeting,
+            paragraphs: [
+              'One part of <strong>CasingConnect</strong> that customers really like is the <strong>public company website</strong> — a customer-facing site for your casing business, built into our solution.',
+              `You can open a <strong>live demo freely</strong> and browse it like a visitor would:<br/><a href="${escapeHtml(demoUrl)}" style="color:#145544;font-weight:700;word-break:break-all">${escapeHtml(demoUrl)}</a>`,
+              'What you get:',
+            ],
+            features,
+            closing:
+              'The <strong>demo is free</strong> to explore. If you later want a site <strong>customised for your company</strong> with us, the cost is <strong>very little</strong> compared with building one from scratch — and it sits alongside your private books and Marketplace presence. Also in progress: <strong>chat with our team in-app</strong> today, and soon <strong>global company chat</strong> so firms in any country can talk inside CasingConnect.',
+            ctaLabel: 'Open the live demo',
+            ctaUrl: demoUrl,
+            secondaryLabel: 'Request a tailored setup',
+            secondaryUrl: `${siteUrl}/tailored-setup`,
+            siteUrl,
+          });
+          return { text, html };
+        },
+      },
+      {
+        id: 'CHAT',
+        label: 'Support chat + global chat (coming soon)',
+        description:
+          'Highlight in-app chat with CasingConnect support now, and global company-to-company chat across countries as a valuable feature in progress.',
+        subject: 'Chat with CasingConnect — and soon with companies worldwide',
+        build: (companyName, siteUrl) => {
+          const greeting = greetingFor(companyName);
+          const features = [
+            'Support chat with the CasingConnect team — available now inside your login',
+            'Ask about setup, books, Marketplace, or a tailored company system',
+            'Coming soon: global company chat — message casing firms in any country',
+            'One place for operations and conversations across the trade',
+          ];
+          const text = [
+            greeting,
+            '',
+            'CasingConnect is building the conversation layer the natural casing trade has been missing.',
+            '',
+            'Available now: Support chat — message our team directly from your company login when you need help or want a tailored setup.',
+            '',
+            'Coming soon (in progress): global company chat — any company can talk to any other company, in any country, inside CasingConnect. Exporters, processors, makers, and buyers connecting without hunting for WhatsApp numbers.',
+            '',
+            'Why this matters:',
+            ...features.map((item, i) => `${i + 1}. ${item}`),
+            '',
+            `Open Support chat: ${siteUrl}/app/support`,
+            `See the product: ${siteUrl}/`,
+            `Request a tailored setup: ${siteUrl}/tailored-setup`,
+            '',
+            'Reply if you want an early look when global company chat goes live.',
+            '',
+            'With regards,',
+            'The CasingConnect team',
+            siteUrl,
+            'info@casingconnect.com',
+          ].join('\n');
+
+          const html = outreachHtml({
+            title: 'Chat with us now — worldwide company chat is next',
+            greeting,
+            paragraphs: [
+              '<strong>CasingConnect</strong> is building the conversation layer the natural casing trade has been missing.',
+              '<strong>Available now:</strong> Support chat — message our team directly from your company login when you need help or want a tailored setup.',
+              '<strong>Coming soon (in progress):</strong> global company chat — any company can talk to any other company, in <strong>any country</strong>, inside CasingConnect. Exporters, processors, makers, and buyers connecting without hunting for WhatsApp numbers.',
+              'Why this matters:',
+            ],
+            features,
+            closing:
+              'This is a <strong>valuable feature we are shipping in stages</strong> — support chat first, then company-to-company chat worldwide.',
+            ctaLabel: 'Open Support chat',
+            ctaUrl: `${siteUrl}/app/support`,
+            secondaryLabel: 'Request a tailored setup',
+            secondaryUrl: `${siteUrl}/tailored-setup`,
+            siteUrl,
+          });
+          return { text, html };
+        },
+      },
       {
         id: 'INTERNATIONAL',
         label: 'International clients',
@@ -472,6 +631,14 @@ export class CampaignsService {
 function greetingFor(companyName: string) {
   const clean = companyName.trim() || 'there';
   return `Dear ${clean} team,`;
+}
+
+function normalizeDemoUrl(raw: string | undefined, siteUrl: string): string | undefined {
+  const value = raw?.trim();
+  if (!value) return undefined;
+  if (/^https?:\/\//i.test(value)) return value;
+  if (value.startsWith('/')) return `${siteUrl}${value}`;
+  return `https://${value.replace(/^\/+/, '')}`;
 }
 
 function outreachHtml(input: {

@@ -25,6 +25,10 @@ export function isBuyerOnly(activities: Activity[] | undefined | null) {
   return activities.every((activity) => activity === 'BUYER');
 }
 
+export function isExporter(activities: Activity[] | undefined | null) {
+  return Boolean(activities?.includes('EXPORTER'));
+}
+
 export const ROLES: [Role, string][] = [
   ['OWNER', 'Owner'],
   ['MANAGER', 'Manager'],

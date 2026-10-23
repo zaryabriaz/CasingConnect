@@ -6,6 +6,7 @@ import bcrypt from 'bcrypt';
 import { provisionBusiness } from '../businesses/provision';
 import { toBusiness } from '../businesses/mappers';
 import { slugify } from '../common/slug';
+import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthSessionDto, LoginDto, RegisterDto } from './dto';
 
@@ -15,6 +16,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly mail: MailService,
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthSessionDto> {
@@ -23,13 +25,15 @@ export class AuthService {
     if (existing) throw new ConflictException('An account with this email already exists.');
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
+    const name = dto.name.trim();
+    const businessName = dto.businessName.trim();
     const created = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
-        data: { name: dto.name.trim(), email, passwordHash },
+        data: { name, email, passwordHash },
       });
       const business = await tx.business.create({
         data: {
-          name: dto.businessName.trim(),
+          name: businessName,
           slug: await this.uniqueSlug(tx, dto.businessName),
           activities: dto.activities,
           currency: dto.currency?.trim().toUpperCase() || 'PKR',
@@ -44,6 +48,8 @@ export class AuthService {
       await provisionBusiness(tx, business.id);
       return { userId: user.id, businessId: business.id };
     });
+
+    void this.mail.sendSignupWelcome({ to: email, name, businessName });
 
     return this.sessionFor(created.userId, created.businessId);
   }

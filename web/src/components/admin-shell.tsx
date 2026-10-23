@@ -31,6 +31,28 @@ const NAV = [
     ),
   },
   {
+    href: '/admin/mailbox',
+    label: 'Mailbox',
+    match: (path: string) => path.startsWith('/admin/mailbox'),
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M4 6h16v12H4z" />
+        <path d="M4 7l8 6 8-6" />
+      </svg>
+    ),
+  },
+  {
+    href: '/admin/support',
+    label: 'Support chat',
+    match: (path: string) => path.startsWith('/admin/support'),
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M4 6h16v10H8l-4 3V6z" />
+        <path d="M8 10h8M8 13h5" />
+      </svg>
+    ),
+  },
+  {
     href: '/admin/users',
     label: 'Users',
     match: (path: string) => path.startsWith('/admin/users'),
@@ -62,6 +84,12 @@ function pageMeta(pathname: string) {
   }
   if (pathname.startsWith('/admin/prospects')) {
     return { title: 'Company finder', kicker: 'Outreach' };
+  }
+  if (pathname.startsWith('/admin/mailbox')) {
+    return { title: 'Mailbox', kicker: 'Compose' };
+  }
+  if (pathname.startsWith('/admin/support')) {
+    return { title: 'Support chat', kicker: 'Inbox' };
   }
   if (pathname.startsWith('/admin/requests')) {
     return { title: 'Setup requests', kicker: 'Inbox' };
@@ -99,9 +127,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
           <span>Admin</span>
         </Link>
         <div className="admin-mobile-bar-actions">
-          <span className="admin-user-avatar" aria-hidden="true">
-            {initial}
-          </span>
+          <button type="button" className="admin-mobile-logout" onClick={session.signOut}>
+            Log out
+          </button>
           <button
             type="button"
             className="admin-menu-toggle"
@@ -152,10 +180,6 @@ export function AdminShell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="admin-side-foot">
-          <p className="admin-side-user">{session.user.email}</p>
-          <button type="button" className="admin-side-logout" onClick={session.signOut}>
-            Log out
-          </button>
           <a href="https://casingconnect.com" target="_blank" rel="noreferrer">
             Open public site
           </a>

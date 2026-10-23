@@ -203,6 +203,16 @@ export class SendCampaignDto {
   @MaxLength(200)
   companyName?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Public company-site demo URL for the PUBLIC_SITE template (e.g. https://casingconnect.com/site/demo-slug).',
+    example: 'https://casingconnect.com/site/al-noor-casings',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  demoUrl?: string;
+
   @ApiProperty({ enum: CAMPAIGN_TEMPLATES })
   @IsIn([...CAMPAIGN_TEMPLATES])
   template!: CampaignTemplateId;
@@ -214,4 +224,44 @@ export class SendCampaignDto {
   @IsOptional()
   @IsBoolean()
   skipAlreadySent?: boolean;
+}
+
+export class SendMailboxDto {
+  @ApiProperty({
+    type: [String],
+    description: 'Recipient emails (max 25).',
+  })
+  @IsArray()
+  @ArrayMaxSize(25)
+  @IsEmail({}, { each: true })
+  toEmails!: string[];
+
+  @ApiProperty({ example: 'Welcome to CasingConnect' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(300)
+  subject!: string;
+
+  @ApiProperty({ description: 'Plain-text message body (wrapped in branded HTML on send).' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(20000)
+  body!: string;
+}
+
+export class AdminOutboundEmailDto {
+  @ApiProperty({ format: 'uuid' }) id!: string;
+  @ApiProperty({ type: [String] }) toEmails!: string[];
+  @ApiProperty() subject!: string;
+  @ApiProperty() bodyText!: string;
+  @ApiProperty() sentCount!: number;
+  @ApiProperty() failedCount!: number;
+  @ApiProperty() results!: unknown;
+  @ApiPropertyOptional({ nullable: true, format: 'uuid' }) createdByUserId!: string | null;
+  @ApiPropertyOptional({ nullable: true }) createdBy!: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+  @ApiProperty() createdAt!: string;
 }

@@ -17,15 +17,17 @@ import {
   IconMarketplace,
   IconOperations,
   IconPartners,
+  IconPdf,
   IconPlaces,
   IconProduction,
   IconProfile,
   IconSales,
   IconStore,
+  IconSupport,
   IconUsers,
   IconWebsite,
 } from '@/components/nav-icons';
-import { isBuyerOnly, labelOf, ROLES } from '@/lib/labels';
+import { isBuyerOnly, isExporter, labelOf, ROLES } from '@/lib/labels';
 import { useSession } from './session';
 import '@/app/admin.css';
 
@@ -50,6 +52,7 @@ const opsNavGroups: NavGroup[] = [
     items: [
       { href: '/app/buying', label: 'Buying', Icon: IconBuying },
       { href: '/app/sales', label: 'Sales', Icon: IconSales },
+      { href: '/app/exports', label: 'Exports', Icon: IconPdf },
       { href: '/app/ledger', label: 'Ledger', Icon: IconLedger },
       { href: '/app/finance', label: 'Finance', Icon: IconFinance },
       { href: '/app/expenses', label: 'Expenses', Icon: IconExpenses },
@@ -127,6 +130,7 @@ function isActive(pathname: string, href: string) {
 
 function pageTitleFor(pathname: string, groups: NavGroup[]) {
   if (pathname.startsWith('/app/profile')) return 'Profile';
+  if (pathname.startsWith('/app/support')) return 'Support chat';
   const match = groups
     .flatMap((group) => group.items)
     .filter((item) => isActive(pathname, item.href))
@@ -138,7 +142,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const session = useSession();
   const buyerOnly = isBuyerOnly(session.business.activities);
-  const navGroups = buyerOnly ? buyerNavGroups : opsNavGroups;
+  const exporter = isExporter(session.business.activities);
+  const navGroups = (buyerOnly ? buyerNavGroups : opsNavGroups).map((group) => ({
+    ...group,
+    items: group.items.filter((item) => item.href !== '/app/exports' || exporter),
+  }));
   const pageTitle = pageTitleFor(pathname, navGroups);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -258,6 +266,19 @@ export function AppShell({ children }: { children: ReactNode }) {
           ))}
         </nav>
       </aside>
+
+      {/* Floating support chat — bottom right (usual site pattern) */}
+      {pathname !== '/app/support' ? (
+        <Link
+          href="/app/support"
+          className="support-fab"
+          aria-label="Open support chat"
+          title="Support chat"
+        >
+          <IconSupport className="rail-icon" />
+          <span className="support-fab-label">Support chat</span>
+        </Link>
+      ) : null}
 
       <div className="shell-main">
         {session.impersonating ? (
